@@ -1621,15 +1621,77 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
 #doc-pages-inner{width:100%;padding:14px;box-sizing:border-box}
 
 /* Center: details */
-.details-panel{width:380px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.details-panel{width:400px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 .details-header{padding:12px 16px;border-bottom:1px solid var(--border)}
 .details-header h3{font-size:14px;color:var(--nhs-dark);font-weight:600}
-.tabs{display:flex;border-bottom:1px solid var(--border);background:#fff}
-.tab{padding:8px 14px;font-size:13px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:.2s;white-space:nowrap}
-.tab.active{color:var(--nhs-blue);border-bottom-color:var(--nhs-blue);font-weight:600}
 .tab-content{flex:1;overflow-y:auto;padding:16px}
 .tab-pane{display:none}
 .tab-pane.active{display:block}
+/* Anima-style pill tabs */
+.tabs{display:flex;gap:6px;padding:10px 12px 0 12px;border-bottom:1px solid var(--border);background:#f8fafc;flex-wrap:wrap;align-items:center}
+.tab{padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border:1px solid var(--border);border-radius:999px;background:#fff;transition:.15s;white-space:nowrap;margin-bottom:8px}
+.tab:hover{border-color:#93c5fd;color:var(--nhs-blue)}
+.tab.active{color:#fff;background:var(--nhs-blue);border-color:var(--nhs-blue);box-shadow:0 1px 4px rgba(0,94,184,.22)}
+.pseudo-select{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--muted);background:#fff;margin-bottom:4px;cursor:default}
+.coding-section-head{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px 0}
+.coding-section-head .field-label{margin:0}
+.coding-clear{font-size:11px;color:#94a3b8;cursor:not-allowed}
+.coding-head-icons{display:flex;align-items:center;gap:10px;color:#64748b;font-size:14px}
+.coding-head-ico{cursor:pointer;user-select:none;line-height:1}
+.coding-head-ico:hover{color:var(--nhs-blue)}
+.coding-group-title{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px}
+.coding-group-title:first-child{margin-top:0}
+.coding-code-card{background:linear-gradient(135deg,#faf5ff 0%,#fff 55%);border:1px solid #e9d5ff;border-left:4px solid #a855f7;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;position:relative}
+/* Per-semantic-type accent on the left border so cards read like the Anima screenshots */
+.coding-code-card.sem-disorder {border-left-color:#ef4444;border-color:#fecaca;background:linear-gradient(135deg,#fef2f2,#fff 55%)}
+.coding-code-card.sem-finding  {border-left-color:#f59e0b;border-color:#fde68a;background:linear-gradient(135deg,#fffbeb,#fff 55%)}
+.coding-code-card.sem-procedure{border-left-color:#0ea5e9;border-color:#bae6fd;background:linear-gradient(135deg,#f0f9ff,#fff 55%)}
+.coding-code-card.sem-situation{border-left-color:#8b5cf6;border-color:#ddd6fe;background:linear-gradient(135deg,#f5f3ff,#fff 55%)}
+.coding-code-card.sem-event    {border-left-color:#22c55e;border-color:#bbf7d0;background:linear-gradient(135deg,#f0fdf4,#fff 55%)}
+.coding-code-card.sem-substance,
+.coding-code-card.sem-product  {border-left-color:#2563eb;border-color:#bfdbfe;background:linear-gradient(135deg,#eff6ff,#fff 55%)}
+/* Active problem card styling */
+.active-problem-card{border:1px solid #e2e8f0;border-left:4px solid #ef4444;border-radius:10px;padding:12px 14px;margin:10px 0 6px 0;background:#fff}
+.active-problem-card .apc-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.active-problem-card .apc-title{font-weight:700;color:#1e293b;font-size:14px}
+.active-problem-card .apc-chip{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:10px}
+.active-problem-card .apc-chip.major{background:#fee2e2;color:#b91c1c}
+.active-problem-card .apc-chip.active{background:#dcfce7;color:#166534}
+.active-problem-card .apc-code{font-family:ui-monospace,monospace;font-size:11px;color:var(--nhs-blue);font-weight:600;margin-top:4px}
+.active-problem-card .apc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.active-problem-card .apc-field-label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.active-problem-card .apc-field-value{font-size:13px;color:#1e293b;border:1px solid #e2e8f0;border-radius:6px;padding:6px 8px;background:#fff}
+.active-problem-card .apc-field-select{font-size:13px;color:#1e293b;border:1px solid #e2e8f0;border-radius:6px;padding:6px 8px;background:#fff;width:100%;cursor:pointer}
+.coding-code-card .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.coding-code-card .card-title{font-weight:700;color:#1e293b}
+.coding-code-card .card-menu{color:#94a3b8;font-size:14px;letter-spacing:1px;user-select:none}
+.coding-code-num{font-family:ui-monospace,monospace;font-size:11px;color:var(--nhs-blue);font-weight:600;margin-top:4px}
+.coding-snippet{font-size:11px;color:#64748b;font-style:italic;margin-top:6px;line-height:1.45;word-break:break-word}
+.task-block{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:#fff;overflow:hidden}
+.task-block-h{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:12px;font-weight:700;color:#334155;background:#f8fafc;border-bottom:1px solid var(--border)}
+.task-block-body{padding:12px;font-size:13px}
+.muted-empty{color:var(--muted);font-size:13px;font-style:italic}
+.task-suggest-card{border-radius:10px;padding:12px 14px;margin-bottom:10px;border:1px solid #e9d5ff;border-left:4px solid #7c3aed;background:linear-gradient(135deg,#faf5ff,#fff)}
+.task-suggest-card.gp{border-left-color:#2563eb;background:linear-gradient(135deg,#eff6ff,#fff);border-color:#bfdbfe}
+.task-suggest-card .badge-row{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#6b21a8;margin-bottom:6px}
+.task-suggest-card.gp .badge-row{color:#1d4ed8}
+.task-suggest-card p{margin:0;line-height:1.5;color:#334155;font-size:13px}
+.task-suggest-card .add-row{margin-top:10px;text-align:right}
+.btn-add-mini{background:#fff;border:1px solid var(--nhs-blue);color:var(--nhs-blue);font-size:12px;font-weight:600;padding:5px 14px;border-radius:6px;cursor:pointer}
+.btn-add-mini:hover{background:#eff6ff}
+.fake-link{font-size:11px;font-weight:600;color:var(--nhs-blue);text-decoration:none;cursor:default}
+.sheet-section{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;background:#fff;overflow:hidden}
+.sheet-section-head{width:100%;text-align:left;padding:10px 12px;font-size:12px;font-weight:700;color:#334155;background:#f8fafc;border:none;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.sheet-section-body{padding:8px 10px 12px;display:none}
+.sheet-section-body.open{display:block}
+.sheet-primary-row{width:100%;text-align:left;padding:10px 12px;margin:4px 0;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:10px}
+.sheet-primary-row:hover{border-color:var(--nhs-blue);background:#f0f7ff}
+.sheet-row{width:100%;text-align:left;padding:8px 12px;margin:2px 0;border:none;background:transparent;font-size:13px;color:var(--text);cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:10px}
+.sheet-row:hover{background:#f1f5f9}
+.snomed-table-details{margin-top:10px}
+.snomed-table-details > summary{font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;padding:6px 0;list-style:none}
+.snomed-table-details > summary::-webkit-details-marker{display:none}
+.snomed-table-details[open] > summary{color:var(--nhs-blue)}
 
 /* Summary box */
 .summary-box{background:#f0f7ff;border-left:3px solid var(--nhs-blue);border-radius:4px;padding:12px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--text);position:relative}
@@ -1810,12 +1872,12 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
       <div class="tabs">
         <div class="tab active" onclick="showTab(this,'details')">Details</div>
         <div class="tab" onclick="showTab(this,'coding')">Coding</div>
-        <div class="tab" onclick="showTab(this,'followup')">Follow-up</div>
-        <div class="tab" onclick="showTab(this,'gpactions')">GP Actions</div>
+        <div class="tab" onclick="showTab(this,'tasks')">Tasks</div>
+        <div class="tab" onclick="showTab(this,'actions')">Actions</div>
       </div>
       <div class="tab-content">
 
-        <!-- DETAILS TAB -->
+        <!-- DETAILS TAB — narrative + letter metadata (Anima-style) -->
         <div class="tab-pane active" id="tab-details">
           <div id="review-alert" class="alert alert-warn" style="display:none">
             ⚠️ Confidence below threshold — outputs generated, please review before approving
@@ -1825,57 +1887,43 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
           </div>
 
           <div class="field-group">
-            <div class="field-label">Summary</div>
+            <div class="field-label">Clinician summary</div>
             <div class="summary-box" id="summary-clinician">
               <button class="copy-btn" onclick="copyText('summary-clinician')" title="Copy">📋</button>
               Loading...
             </div>
           </div>
 
-          <!-- SNOMED CT Mapping Card — prominent, dedicated slot below Summary -->
-          <div id="snomed-card" style="margin-top:14px;border:2px solid #005eb8;border-radius:10px;overflow:hidden">
-            <!-- Card header -->
-            <div style="background:#005eb8;padding:8px 12px;display:flex;align-items:center;justify-content:space-between">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:15px">🧬</span>
-                <span style="color:#fff;font-weight:700;font-size:13px;letter-spacing:.3px">SNOMED CT Mappings</span>
-                <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600" id="snomed-count-badge">0 entities</span>
-              </div>
-              <span id="snomed-conf-badge" style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:500"></span>
-            </div>
-            <!-- Legend row -->
-            <div style="background:#eaf1fb;padding:5px 12px;display:flex;gap:14px;font-size:11px;color:#444;border-bottom:1px solid #c8d8ea">
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c0392b;margin-right:4px;vertical-align:middle"></span>Problem/Finding</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1a6636;margin-right:4px;vertical-align:middle"></span>Diagnosis</span>
-              <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1a4fa0;margin-right:4px;vertical-align:middle"></span>Medication</span>
-            </div>
-            <!-- Table -->
-            <div style="overflow-x:auto;max-height:320px;overflow-y:auto">
-              <table id="snomed-table" style="width:100%;border-collapse:collapse;font-size:12px">
-                <thead>
-                  <tr style="background:#f0f4fa;position:sticky;top:0;z-index:1">
-                    <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:90px">Category</th>
-                    <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea">Clinical Term</th>
-                    <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:100px">SNOMED Code</th>
-                    <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea">Description</th>
-                    <th style="padding:6px 10px;text-align:center;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:58px">Conf.</th>
-                  </tr>
-                </thead>
-                <tbody id="snomed-table-body">
-                  <tr><td colspan="5" style="padding:16px;text-align:center;color:#888;font-style:italic">Processing…</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <!-- Empty state (shown when 0 entities returned) -->
-            <div id="snomed-empty" style="display:none;padding:14px 12px;text-align:center;color:#666;font-size:12px;background:#fafbfc">
-              No SNOMED CT entities identified — document may use non-standard terminology or OCR quality was low.
-              <span style="display:block;margin-top:4px;color:#999;font-size:11px">Check the Coding tab for raw ICD codes and medication extraction.</span>
-            </div>
+          <div class="field-group">
+            <div class="field-label">Pharmacist summary</div>
+            <div class="summary-box" id="summary-pharmacist">Loading...</div>
           </div>
 
           <div class="field-group">
-            <div class="field-label">Letter Type</div>
-            <input class="field-input" id="field-letter-type" value="">
+            <div class="field-label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span>Letter type</span>
+              <span id="letter-type-pred-badge" style="display:none;font-size:10px;font-weight:700;letter-spacing:.3px;background:#e6f7ef;color:#00703c;border:1px solid #b3e8cf;padding:2px 8px;border-radius:10px;text-transform:none">Auto-detected</span>
+              <span id="letter-type-override-badge" style="display:none;font-size:10px;font-weight:700;letter-spacing:.3px;background:#fff3e0;color:#c77700;border:1px solid #ffe0a3;padding:2px 8px;border-radius:10px;text-transform:none">Manual override</span>
+            </div>
+            <div id="letter-type-auto-line" style="display:none;font-size:11px;color:var(--muted);margin-bottom:6px">
+              Predicted as <strong id="letter-type-raw" style="color:var(--nhs-dark)">—</strong>
+              → bucketed to <strong id="letter-type-bucket" style="color:var(--nhs-dark)">—</strong>
+              <a href="#" id="letter-type-reset" style="margin-left:6px;color:var(--nhs-blue);text-decoration:none;display:none">Reset to prediction</a>
+            </div>
+            <select class="field-input" id="field-letter-type" style="cursor:pointer;background:#fff">
+              <option value="">Select letter type…</option>
+              <option data-bucket-key="HOSP" value="Hospital Discharge Summary (after admission into hospital)">Hospital Discharge Summary (after admission into hospital)</option>
+              <option data-bucket-key="CLIN" value="Clinical Letters/Report (after visiting specialists)">Clinical Letters/Report (after visiting specialists)</option>
+              <option data-bucket-key="111"  value="111 Report (seeking advice from Clinician over phone)">111 Report (seeking advice from Clinician over phone)</option>
+              <option data-bucket-key="ED"   value="Accident &amp; Emergency Department report">Accident &amp; Emergency Department report</option>
+              <option data-bucket-key="AMB"  value="Ambulance Report (When emergency services are called)">Ambulance Report (When emergency services are called)</option>
+              <option data-bucket-key="PRIV" value="Private Specialists clinical letter">Private Specialists clinical letter</option>
+              <option data-bucket-key="EXT"  value="External service providers (Boots, Spec savers – for Eye &amp; ENT)">External service providers (Boots, Spec savers – for Eye &amp; ENT)</option>
+              <option data-bucket-key="DES"  value="Diabetic eye screening reports">Diabetic eye screening reports</option>
+              <option data-bucket-key="OOH"  value="Out of hours (East Berkshire Primary Care)">Out of hours (East Berkshire Primary Care)</option>
+              <option data-bucket-key="MISC" value="Miscellaneous">Miscellaneous</option>
+            </select>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Dropdown is a fallback override if the prediction is wrong.</div>
           </div>
           <div style="display:flex;gap:10px">
             <div class="field-group" style="flex:1">
@@ -1906,36 +1954,79 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
           </div>
         </div>
 
-        <!-- CODING TAB -->
+        <!-- CODING TAB — problems, code cards, SNOMED table (Anima-style) -->
         <div class="tab-pane" id="tab-coding">
-          <div class="field-group">
-            <div class="field-label">Patient Summary (Pharmacist)</div>
-            <div class="summary-box" id="summary-pharmacist">Loading...</div>
+          <div class="coding-section-head">
+            <div class="field-label" style="margin:0">Problems</div>
+            <div class="coding-head-icons">
+              <span class="coding-head-ico" title="History">🕐</span>
+              <span class="coding-head-ico" title="Refresh">↻</span>
+            </div>
           </div>
+          <div class="pseudo-select">Add an existing or new problem</div>
 
-          <div class="entity-section">
-            <div class="entity-section-label">🔴 Problems / Findings</div>
-            <div id="chips-problems"></div>
+          <div id="coding-active-problem"></div>
+
+          <div class="coding-section-head">
+            <div class="field-label" style="margin:0">Codes</div>
+            <span class="coding-clear">Clear section</span>
           </div>
-          <div class="entity-section">
-            <div class="entity-section-label">💊 Medications</div>
-            <div id="chips-medications"></div>
-          </div>
-          <div class="entity-section">
-            <div class="entity-section-label">🩺 Diagnoses</div>
-            <div id="chips-diagnoses"></div>
-          </div>
-          <div class="entity-section">
-            <div class="entity-section-label">📋 ICD Codes</div>
+          <div class="pseudo-select" style="margin-bottom:10px">Add a code</div>
+          <div id="coding-entity-cards"></div>
+
+          <details class="snomed-table-details">
+            <summary>Full SNOMED CT mapping table</summary>
+            <div id="snomed-card" style="margin-top:10px;border:2px solid #005eb8;border-radius:10px;overflow:hidden">
+              <div style="background:#005eb8;padding:8px 12px;display:flex;align-items:center;justify-content:space-between">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-size:15px">🧬</span>
+                  <span style="color:#fff;font-weight:700;font-size:13px;letter-spacing:.3px">SNOMED CT Mappings</span>
+                  <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600" id="snomed-count-badge">0 entities</span>
+                </div>
+                <span id="snomed-conf-badge" style="color:rgba(255,255,255,0.85);font-size:11px;font-weight:500"></span>
+              </div>
+              <div style="background:#eaf1fb;padding:5px 12px;display:flex;gap:14px;font-size:11px;color:#444;border-bottom:1px solid #c8d8ea">
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c0392b;margin-right:4px;vertical-align:middle"></span>Problem/Finding</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1a6636;margin-right:4px;vertical-align:middle"></span>Diagnosis</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1a4fa0;margin-right:4px;vertical-align:middle"></span>Medication</span>
+              </div>
+              <div style="overflow-x:auto;max-height:280px;overflow-y:auto">
+                <table id="snomed-table" style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead>
+                    <tr style="background:#f0f4fa;position:sticky;top:0;z-index:1">
+                      <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:90px">Category</th>
+                      <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea">Clinical Term</th>
+                      <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:100px">SNOMED Code</th>
+                      <th style="padding:6px 10px;text-align:left;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea">Description</th>
+                      <th style="padding:6px 10px;text-align:center;font-weight:700;color:#333;border-bottom:1px solid #c8d8ea;width:58px">Conf.</th>
+                    </tr>
+                  </thead>
+                  <tbody id="snomed-table-body">
+                    <tr><td colspan="5" style="padding:16px;text-align:center;color:#888;font-style:italic">Processing…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="snomed-empty" style="display:none;padding:14px 12px;text-align:center;color:#666;font-size:12px;background:#fafbfc">
+                No SNOMED CT entities identified — document may use non-standard terminology or OCR quality was low.
+                <span style="display:block;margin-top:4px;color:#999;font-size:11px">See ICD codes and extracted medications below.</span>
+              </div>
+            </div>
+          </details>
+
+          <div class="entity-section" style="margin-top:14px">
+            <div class="entity-section-label">📋 ICD codes (local extraction)</div>
             <div id="chips-icd"></div>
           </div>
           <div class="entity-section">
-            <div class="entity-section-label">💊 Medications (extracted)</div>
+            <div class="entity-section-label">💊 Medications (extracted text)</div>
             <div id="chips-meds-raw"></div>
           </div>
+          <div id="chips-problems" style="display:none"></div>
+          <div id="chips-medications" style="display:none"></div>
+          <div id="chips-diagnoses" style="display:none"></div>
 
           <div class="field-group" style="margin-top:12px">
-            <div class="field-label">Unified Confidence Score</div>
+            <div class="field-label">Unified confidence score</div>
             <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
               <div id="conf-score-label" style="font-size:18px;font-weight:700;color:var(--nhs-blue)">—</div>
               <div style="flex:1">
@@ -1946,20 +2037,51 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
           </div>
         </div>
 
-        <!-- FOLLOW-UP TAB -->
-        <div class="tab-pane" id="tab-followup">
+        <!-- TASKS TAB — patient instructions + suggested follow-up / GP items -->
+        <div class="tab-pane" id="tab-tasks">
           <div class="field-group">
-            <div class="field-label">Patient Instructions</div>
+            <div class="field-label">Patient instructions</div>
             <div class="summary-box" id="summary-patient">Loading...</div>
           </div>
-          <div class="field-label" style="margin-bottom:8px">Follow-up Actions</div>
-          <div id="followup-actions"></div>
+          <div class="task-block">
+            <div class="task-block-h">
+              <span>To-do</span>
+              <a href="#" class="fake-link" onclick="return false">Add new task</a>
+            </div>
+            <div class="task-block-body"><span class="muted-empty">No tasks assigned to this document.</span></div>
+          </div>
+          <div class="task-block">
+            <div class="task-block-h"><span>Suggested</span></div>
+            <div class="task-block-body" id="tasks-suggested"></div>
+          </div>
+          <div class="task-block">
+            <div class="task-block-h"><span>Done</span></div>
+            <div class="task-block-body"><span class="muted-empty">No completed tasks for this document.</span></div>
+          </div>
         </div>
 
-        <!-- GP ACTIONS TAB -->
-        <div class="tab-pane" id="tab-gpactions">
-          <div class="field-label" style="margin-bottom:8px">GP Actions Required</div>
-          <div id="gp-actions"></div>
+        <!-- ACTIONS TAB — contact + document shortcuts (Anima-style) -->
+        <div class="tab-pane" id="tab-actions">
+          <div class="sheet-section">
+            <button type="button" class="sheet-section-head" onclick="toggleSheetSection(this)">
+              Contact <span>▾</span>
+            </button>
+            <div class="sheet-section-body open">
+              <button type="button" class="sheet-primary-row" onclick="alert('In a live deployment this would open the follow-up messaging workflow.')">✉️ Send follow-up</button>
+            </div>
+          </div>
+          <div class="sheet-section">
+            <button type="button" class="sheet-section-head" onclick="toggleSheetSection(this)">
+              Document <span>▾</span>
+            </button>
+            <div class="sheet-section-body open">
+              <button type="button" class="sheet-row" onclick="alert('Activity timeline would open here.')">🕐 Open activity</button>
+              <button type="button" class="sheet-row" onclick="copyPageLink()">🔗 Copy link</button>
+              <button type="button" class="sheet-row" onclick="document.getElementById('btn-download').click()">⬇️ Download document</button>
+              <button type="button" class="sheet-row" onclick="alert('Archive would move this document to the archive store.')">🗑️ Archive document</button>
+            </div>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.45">Use <strong>Download</strong> for the full processed JSON. Approve and EMIS export stay in the bar below.</p>
         </div>
 
       </div><!-- end tab-content -->
@@ -1970,7 +2092,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
         <button class="btn-sm btn-outline" onclick="location.reload()">Refresh</button>
         <button class="btn-sm btn-outline" id="btn-download">Download</button>
         <button class="btn-sm btn-success" id="btn-approve">✓ Approve</button>
-        <button class="btn-sm btn-emis" id="btn-emis">Save to EMIS</button>
+        <button class="btn-sm btn-emis" id="btn-emis" title="Export structured data to the clinical system (e.g. EMIS)">Save to record</button>
       </div>
     </div>
 
@@ -2188,8 +2310,12 @@ function renderResult(data, file) {
   setText('summary-patient',   (sums.patient||{}).summary   || 'Not available');
   setText('summary-pharmacist',(sums.pharmacist||{}).summary || 'Not available');
 
-  // Fields
-  setVal('field-letter-type', data.letter_type || '');
+  // Fields — the pipeline (infer_letter_type) predicts the raw letter type; the UI
+  // maps that prediction onto one of the 10 practice-facing buckets. The dropdown
+  // below is an override/fallback for when the auto-prediction is wrong.
+  const rawLetterType = data.letter_type || '';
+  const bucketLabel   = mapLetterTypeToBucket(rawLetterType, data.extracted_text || '');
+  applyPredictedLetterType(rawLetterType, bucketLabel);
   setVal('field-event-date', '');
   setVal('field-letter-date', '');
   setVal('field-sender', '');
@@ -2210,7 +2336,7 @@ function renderResult(data, file) {
 
   // Doc info
   setText('di-name', data.filename || file.name);
-  setText('di-type', data.letter_type || '—');
+  setText('di-type', bucketLabel || data.letter_type || '—');
   setText('di-trust', data.hospital_trust || '—');   // OBS-008
   setText('di-date', new Date(data.processed_at).toLocaleString('en-GB'));
   // OBS-004: Show per-type threshold used (reuse threshold already declared above)
@@ -2231,16 +2357,20 @@ function renderResult(data, file) {
   const s = data.structured || {};
   if (s.consultant)        setVal('field-consultant', s.consultant);
   if (s.department)        setVal('field-dept', s.department);
-  if (s.admission_date)    setVal('field-event-date', s.admission_date);
+  // Always reset the per-document event date so a previous document's value
+  // never leaks into the active-problem "Started on" field.
+  window._docEventDate = s.admission_date || '';
+  if (s.admission_date) setVal('field-event-date', s.admission_date);
   if (s.discharge_date || s.appointment_date) setVal('field-letter-date', s.discharge_date || s.appointment_date);
   if (s.admission_method)  setVal('field-sender', s.admission_method);
   if (s.diagnosis_text)    setVal('field-conclusion', s.diagnosis_text);
   if (s.indication || s.impression) setVal('field-conclusion', s.indication || s.impression);
 
-  // SNOMED chips — Coding tab
+  // Coding tab — hidden chip sinks (kept for any future hooks)
   renderChips('chips-problems',   (data.snomed||{}).problems   || []);
   renderChips('chips-medications',(data.snomed||{}).medications|| []);
   renderChips('chips-diagnoses',  (data.snomed||{}).diagnoses  || []);
+  renderCodingEntityCards(data);
   renderRightEntities('right-problems',   (data.snomed||{}).problems   || []);
   renderRightEntities('right-medications',(data.snomed||{}).medications|| []);
   renderRightEntities('right-diagnoses',  (data.snomed||{}).diagnoses  || []);
@@ -2300,9 +2430,8 @@ function renderResult(data, file) {
     document.getElementById('doc-filename').textContent += ` (${data.pages_processed} pages)`;
   }
 
-  // Follow-up actions
-  renderActions('followup-actions', data.follow_up_actions || '');
-  renderActions('gp-actions', data.gp_actions || '');
+  // Tasks tab — suggested follow-up + GP actions as cards
+  renderTaskSuggestions(data.follow_up_actions || '', data.gp_actions || '');
 
   // Clinical Specifics (type-specific extras: TNM, CD4, OGTT, urgency, etc.)
   const specs = data.clinical_specifics || {};
@@ -2437,8 +2566,23 @@ function renderResult(data, file) {
     document.getElementById('btn-approve').style.background = '#004f26';
   };
   document.getElementById('btn-emis').onclick = () => {
-    alert('Export to EMIS: In production this would push the structured JSON to the EMIS platform via the configured API endpoint.');
+    alert('Save to record: In production this would push the structured extraction to the clinical record (e.g. EMIS) via the configured API.');
   };
+  // Letter type override / reset wiring
+  const selLT = document.getElementById('field-letter-type');
+  if (selLT && !selLT._wired) {
+    selLT.addEventListener('change', onLetterTypeChanged);
+    selLT._wired = true;
+  }
+  const rstLT = document.getElementById('letter-type-reset');
+  if (rstLT && !rstLT._wired) {
+    rstLT.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      setVal('field-letter-type', _predictedBucket);
+      onLetterTypeChanged();
+    });
+    rstLT._wired = true;
+  }
 }
 
 // ── SNOMED CT Mapping Table ───────────────────────────────────────────────────
@@ -2675,33 +2819,357 @@ function renderRightEntities(containerId, entities) {
   });
 }
 
-function renderActions(containerId, text) {
-  const el = document.getElementById(containerId);
+function parseActionLines(text) {
+  if (!text || !String(text).trim()) return [];
+  return String(text).split('\n').map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
+}
+
+function renderTaskSuggestions(followText, gpText) {
+  const el = document.getElementById('tasks-suggested');
+  if (!el) return;
   el.textContent = '';
-  if (!text) {
+  const fu = parseActionLines(followText);
+  const gp = parseActionLines(gpText);
+  if (!fu.length && !gp.length) {
     const none = document.createElement('span');
-    none.style.cssText = 'color:var(--muted);font-size:13px';
-    none.textContent = 'No actions generated';
+    none.className = 'muted-empty';
+    none.textContent = 'No suggested tasks were generated for this document.';
     el.appendChild(none);
     return;
   }
-  const lines = text.split('\n').filter(l => l.trim());
-  let num = 0;
-  lines.forEach(l => {
-    const clean = l.replace(/^\d+[\.\)]\s*/, '').trim();
-    if (!clean) return;
-    num++;
+  function addCard(kind, bodyText) {
+    const card = document.createElement('div');
+    card.className = 'task-suggest-card' + (kind === 'gp' ? ' gp' : '');
+    const badge = document.createElement('div');
+    badge.className = 'badge-row';
+    badge.textContent = kind === 'gp' ? 'GP action required' : 'Follow-up / care task';
+    const p = document.createElement('p');
+    p.textContent = bodyText;
     const row = document.createElement('div');
-    row.className = 'action-item';
-    const numEl = document.createElement('div');
-    numEl.className = 'action-num';
-    numEl.textContent = String(num);
-    const txt = document.createElement('div');
-    txt.textContent = clean;
-    row.appendChild(numEl);
-    row.appendChild(txt);
-    el.appendChild(row);
+    row.className = 'add-row';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-add-mini';
+    btn.textContent = 'Add';
+    btn.onclick = () => alert('In production this would add the task to the record workflow.');
+    row.appendChild(btn);
+    card.appendChild(badge);
+    card.appendChild(p);
+    card.appendChild(row);
+    el.appendChild(card);
+  }
+  fu.forEach(t => addCard('fu', t));
+  gp.forEach(t => addCard('gp', t));
+}
+
+// Parse the SNOMED semantic type from the description suffix, e.g.
+// "Gestational diabetes mellitus (disorder)" -> "disorder".
+function _semanticType(e) {
+  const d = (e && e.description) || '';
+  const m = d.match(/\(([^()]+)\)\s*$/);
+  if (m) {
+    const tag = m[1].toLowerCase().trim();
+    // Normalise common SNOMED hierarchy labels
+    if (tag.indexOf('disorder') >= 0) return 'disorder';
+    if (tag.indexOf('finding')  >= 0) return 'finding';
+    if (tag.indexOf('procedure')>= 0) return 'procedure';
+    if (tag.indexOf('situation')>= 0) return 'situation';
+    if (tag.indexOf('event')    >= 0) return 'event';
+    if (tag.indexOf('substance')>= 0) return 'substance';
+    if (tag.indexOf('product')  >= 0) return 'product';
+    if (tag.indexOf('observable')>=0) return 'finding';
+    if (tag.indexOf('body structure')>=0) return 'finding';
+    if (tag.indexOf('organism') >= 0) return 'finding';
+    return tag.split(/\s+/)[0];
+  }
+  return '';
+}
+
+function _semanticLabel(sem) {
+  const map = {
+    disorder:'Disorder', finding:'Finding', procedure:'Procedure',
+    situation:'Situation', event:'Event', substance:'Substance', product:'Medication'
+  };
+  return map[sem] || (sem ? (sem.charAt(0).toUpperCase() + sem.slice(1)) : 'Other');
+}
+
+function _renderActiveProblem(entity) {
+  const host = document.getElementById('coding-active-problem');
+  if (!host) return;
+  host.textContent = '';
+  if (!entity) return;
+  const card = document.createElement('div');
+  card.className = 'active-problem-card';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'apc-title-row';
+  const title = document.createElement('div');
+  title.className = 'apc-title';
+  title.textContent = entity.text || '—';
+  titleRow.appendChild(title);
+  const chipMajor  = document.createElement('span');
+  chipMajor.className = 'apc-chip major';
+  chipMajor.textContent = 'Major';
+  const chipActive = document.createElement('span');
+  chipActive.className = 'apc-chip active';
+  chipActive.textContent = 'Active';
+  titleRow.appendChild(chipMajor);
+  titleRow.appendChild(chipActive);
+  card.appendChild(titleRow);
+
+  if (entity.snomed_code) {
+    const code = document.createElement('div');
+    code.className = 'apc-code';
+    code.textContent = String(entity.snomed_code);
+    card.appendChild(code);
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'apc-grid';
+
+  function addField(label, valueNode) {
+    const col = document.createElement('div');
+    const l = document.createElement('div');
+    l.className = 'apc-field-label';
+    l.textContent = label;
+    col.appendChild(l);
+    col.appendChild(valueNode);
+    grid.appendChild(col);
+  }
+
+  const sevVal = document.createElement('div');
+  sevVal.className = 'apc-field-value';
+  sevVal.textContent = 'Major';
+  addField('Severity', sevVal);
+
+  const statusSel = document.createElement('select');
+  statusSel.className = 'apc-field-select';
+  ['Review','Active','Resolved','Inactive'].forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt.toLowerCase();
+    o.textContent = opt;
+    if (opt === 'Review') o.selected = true;
+    statusSel.appendChild(o);
   });
+  addField('Status', statusSel);
+
+  const started = document.createElement('div');
+  started.className = 'apc-field-value';
+  started.textContent = (window._docEventDate || '—');
+  addField('Started on', started);
+
+  const desc = document.createElement('div');
+  desc.className = 'apc-field-value';
+  desc.textContent = entity.description || '—';
+  addField('Description', desc);
+
+  card.appendChild(grid);
+  host.appendChild(card);
+}
+
+function renderCodingEntityCards(data) {
+  const root = document.getElementById('coding-entity-cards');
+  if (!root) return;
+  root.textContent = '';
+
+  const probs = (data.snomed || {}).problems     || [];
+  const dx    = (data.snomed || {}).diagnoses    || [];
+  const meds  = (data.snomed || {}).medications  || [];
+
+  // Pick the "active problem" = first disorder we can find, else first diagnosis/problem.
+  const disorders = [...dx, ...probs].filter(e => _semanticType(e) === 'disorder');
+  const active = disorders[0] || dx[0] || probs[0] || null;
+  _renderActiveProblem(active);
+
+  // Regroup everything by SNOMED semantic type (with a sensible fallback).
+  const groups = {}; // sem -> entity[]
+  function bucket(list, fallback) {
+    list.forEach(e => {
+      let sem = _semanticType(e);
+      if (!sem) sem = fallback;
+      (groups[sem] = groups[sem] || []).push(e);
+    });
+  }
+  bucket(dx,    'disorder');
+  bucket(probs, 'finding');
+  bucket(meds,  'product');
+
+  // Render order, matches the Anima "Disorder / Finding / Event / ..." flow.
+  const order = ['disorder','finding','procedure','situation','event','substance','product'];
+  const seen = new Set();
+  function renderGroup(sem) {
+    const list = groups[sem];
+    if (!list || !list.length) return;
+    seen.add(sem);
+    const h = document.createElement('div');
+    h.className = 'coding-group-title';
+    h.textContent = _semanticLabel(sem);
+    root.appendChild(h);
+    list.forEach(e => {
+      const card = document.createElement('div');
+      card.className = 'coding-code-card sem-' + sem;
+      const top = document.createElement('div');
+      top.className = 'card-top';
+      const t = document.createElement('div');
+      t.className = 'card-title';
+      t.textContent = e.text || '—';
+      const menu = document.createElement('span');
+      menu.className = 'card-menu';
+      menu.textContent = '⋮';
+      top.appendChild(t);
+      top.appendChild(menu);
+      card.appendChild(top);
+      if (e.snomed_code) {
+        const c = document.createElement('div');
+        c.className = 'coding-code-num';
+        c.textContent = String(e.snomed_code);
+        card.appendChild(c);
+      }
+      if (e.description) {
+        const d = document.createElement('div');
+        d.className = 'coding-snippet';
+        d.textContent = e.description;
+        card.appendChild(d);
+      }
+      root.appendChild(card);
+    });
+  }
+  order.forEach(renderGroup);
+  // Any leftover semantic types not in the preferred order
+  Object.keys(groups).forEach(s => { if (!seen.has(s)) renderGroup(s); });
+
+  if (!root.childNodes.length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted-empty';
+    empty.textContent = 'No coded entities identified — expand the mapping table below or check ICD / medication extraction.';
+    root.appendChild(empty);
+  }
+}
+
+function toggleSheetSection(btn) {
+  const body = btn.nextElementSibling;
+  if (!body || !body.classList.contains('sheet-section-body')) return;
+  body.classList.toggle('open');
+  const chev = btn.querySelector('span');
+  if (chev) chev.textContent = body.classList.contains('open') ? '▾' : '▸';
+}
+
+// Apply the pipeline's prediction to the Letter type dropdown + badges.
+// Manual change to the dropdown flips it into "override" mode.
+let _predictedBucket = '';
+let _predictedRaw    = '';
+function applyPredictedLetterType(rawLetterType, bucketLabel) {
+  _predictedRaw    = rawLetterType || '';
+  _predictedBucket = bucketLabel   || '';
+  const rawEl      = document.getElementById('letter-type-raw');
+  const bucketEl   = document.getElementById('letter-type-bucket');
+  const autoLine   = document.getElementById('letter-type-auto-line');
+  const predBadge  = document.getElementById('letter-type-pred-badge');
+  const overBadge  = document.getElementById('letter-type-override-badge');
+  const resetLink  = document.getElementById('letter-type-reset');
+  if (rawEl)    rawEl.textContent    = rawLetterType || '—';
+  if (bucketEl) bucketEl.textContent = bucketLabel   || '—';
+  // Drive auto-detected indicators off the actual predicted bucket (not the
+  // raw letter type). Otherwise the dropdown can be silently auto-set to a
+  // bucket while the "Auto-detected" badge and explainer line are hidden
+  // because rawLetterType happened to be empty.
+  const hasPrediction = !!_predictedBucket;
+  if (autoLine) autoLine.style.display = hasPrediction ? '' : 'none';
+  if (predBadge) predBadge.style.display = hasPrediction ? '' : 'none';
+  if (overBadge) overBadge.style.display = 'none';
+  if (resetLink) resetLink.style.display = 'none';
+  setVal('field-letter-type', bucketLabel);
+}
+
+function onLetterTypeChanged() {
+  const sel = document.getElementById('field-letter-type');
+  if (!sel) return;
+  const current = sel.value;
+  const predBadge = document.getElementById('letter-type-pred-badge');
+  const overBadge = document.getElementById('letter-type-override-badge');
+  const resetLink = document.getElementById('letter-type-reset');
+  const overridden = current !== _predictedBucket;
+  // Pred badge visibility is tied to the predicted bucket, not the raw
+  // pipeline letter_type (which may be empty even when a bucket was predicted).
+  if (predBadge) predBadge.style.display = overridden ? 'none' : (_predictedBucket ? '' : 'none');
+  if (overBadge) overBadge.style.display = overridden ? '' : 'none';
+  if (resetLink) resetLink.style.display = overridden ? '' : 'none';
+  // Keep right-panel Document info in sync with whatever the user chose.
+  // Fall back to the predicted BUCKET (matching the format initially shown)
+  // rather than the raw pipeline letter_type, so di-type doesn't flip formats
+  // when the user clears their selection.
+  const diType = document.getElementById('di-type');
+  if (diType) diType.textContent = current || _predictedBucket || '—';
+}
+
+// Single source of truth for the 10 practice-facing bucket labels: read them
+// straight from the <select>'s data-bucket-key options. This avoids drift
+// between the dropdown options and the mapper constants — fixing the label
+// text in one place (e.g. "advise" -> "advice") automatically updates both.
+let _bucketLabelCache = null;
+function getLetterTypeBuckets() {
+  if (_bucketLabelCache) return _bucketLabelCache;
+  const sel = document.getElementById('field-letter-type');
+  const out = {};
+  if (sel) {
+    Array.from(sel.options).forEach(o => {
+      const k = o.getAttribute('data-bucket-key');
+      if (k) out[k] = o.value;
+    });
+  }
+  // Only cache once the select has been populated with its bucket options.
+  if (Object.keys(out).length) _bucketLabelCache = out;
+  return out;
+}
+
+// Map pipeline `letter_type` (and document text) to one of the 10 practice buckets.
+// Purely UI-side — does not alter backend output.
+function mapLetterTypeToBucket(internal, docText) {
+  const t = (docText || '').toLowerCase();
+  const B = getLetterTypeBuckets();
+
+  const desCues = ['diabetic eye screening','nhs diabetic eye','retinopathy screening',
+                   'grading digital images','des service','des programme','screening outcome'];
+  if (desCues.some(c => t.includes(c))) return B.DES;
+
+  const oohCues = ['out of hours','out-of-hours','gp out of hours','ic24','voddoc',
+                   'east berkshire primary care','brants bridge','wokingham ooh',
+                   'primary care out of hours'];
+  const oohCandidateInternals = ['Clinical Letter','Outpatient Letter','Referral Letter',
+                                 'Medication Request','Procedure Report'];
+  if (oohCues.some(c => t.includes(c)) && oohCandidateInternals.includes(internal)) return B.OOH;
+
+  const hosp = new Set(['Discharge Summary','Mental Health Inpatient Discharge',
+                        'Antenatal Discharge Summary','CAMHS Discharge Summary']);
+  if (hosp.has(internal)) return B.HOSP;
+  if (internal === 'ED Discharge Letter') return B.ED;
+  if (internal === '111 First ED Report') return B['111'];
+  if (internal === 'Ambulance Clinical Report') return B.AMB;
+  if (internal === 'Ophthalmology Referral') return B.EXT;
+  if (internal === 'Ophthalmology Letter') return B.DES;
+  if (internal === 'Medication / Prescriber Letter') return B.PRIV;
+  if (internal === 'Medication Request') return B.MISC;
+
+  const clin = new Set(['Referral Letter','Outpatient Letter','Clinical Letter',
+    'Cancer Surveillance Letter','HIV / GUM Clinic Letter','Maternity / Diabetes Letter',
+    'Surgical Outpatient Letter','Procedure Report','Psychiatry Outpatient Letter',
+    'Renal / Nephrology Letter','Paediatric Cardiology Letter',
+    'Early Pregnancy / Gynaecology Letter','Pre-admission Letter',
+    'Haematology Outpatient Letter']);
+  if (clin.has(internal)) return B.CLIN;
+
+  // No signal from the pipeline or document cues: return an empty bucket so
+  // the caller can avoid silently auto-selecting a dropdown option.
+  if (!internal) return '';
+  return B.MISC;
+}
+
+function copyPageLink() {
+  const url = window.location.href.split('#')[0];
+  navigator.clipboard.writeText(url).then(
+    () => alert('Page link copied to clipboard.'),
+    () => alert('Could not copy link.')
+  );
 }
 
 // FIX (review comment 6): Accept the clicked element explicitly rather than
