@@ -1,0 +1,251 @@
+{
+  "doc_id": "1cfc4680",
+  "filename": "1cfc4680_9._452_409_5209.pdf",
+  "processed_at": "2026-05-11T16:09:28.526826",
+  "status": "processed",
+  "pipeline_stages": {
+    "tier0": {
+      "status": "done",
+      "note": "document_handler: 1 page(s) from .PDF | OpenCV preprocessing: applied"
+    },
+    "tier1": {
+      "status": "done",
+      "confidence": 0.963,
+      "pages": 1,
+      "chars_extracted": 640
+    },
+    "tier2": {
+      "status": "skipped",
+      "note": "Textract confidence >= 90% \u2014 direct to Track A/B (SRS \u00a77 step 2)"
+    },
+    "track_a": {
+      "status": "done",
+      "entities_found": 3,
+      "confidence": 0.71
+    },
+    "hipaa": {
+      "status": "done",
+      "phi_entities_detected": 11,
+      "note": "PHI detection via hipaa_compliance.detect_phi_entities()"
+    },
+    "track_b": {
+      "status": "done",
+      "confidence": 0.8,
+      "letter_type": "Medication / Prescriber Letter"
+    }
+  },
+  "requires_review": false,
+  "pages_processed": 1,
+  "preview_pages": [
+    "/pages/1cfc4680/orig_01.png",
+    "/pages/1cfc4680/orig_02.png",
+    "/pages/1cfc4680/orig_03.png",
+    "/pages/1cfc4680/orig_04.png",
+    "/pages/1cfc4680/orig_05.png"
+  ],
+  "preview_image": "/pages/1cfc4680/orig_01.png",
+  "unified_confidence": 0.847,
+  "confidence_threshold": 0.72,
+  "letter_type": "Medication / Prescriber Letter",
+  "hospital_trust": "Expert Health Ltd",
+  "is_sensitive": false,
+  "patient_info": {
+    "name": "Natalia Piattos",
+    "nhs_number": "Not available",
+    "dob": "27/08/1969",
+    "sex": "Female",
+    "address": "",
+    "hospital_number": "",
+    "gp_practice": "",
+    "pathways_urgency": "",
+    "presenting_complaint": "",
+    "gravida_parity": "",
+    "edd": "",
+    "gestational_age": ""
+  },
+  "structured": {
+    "admission_date": "",
+    "discharge_date": "",
+    "appointment_date": "",
+    "consultant": "",
+    "department": "",
+    "hospital": "",
+    "gp_actions": "",
+    "diagnosis_text": "",
+    "admission_method": "",
+    "discharge_method": "",
+    "procedure": "",
+    "indication": "Weight Loss",
+    "impression": ""
+  },
+  "clinical_specifics": {},
+  "extracted_text": "Expert/Health Ltd\nOur Ref: 5200308\nEasthampstead Surgery\n23 Rectory Lane\nEasthampstead. Bracknell\nBerkshire\nRG12 7BB\nDate 01/02/2026\nNotification of Consultation\nDear Doctor,\nRe:MRS Natalia Piattos\n124 Oishi Cracker\nBRACKNELL\nRG12 40C\n27/08/1969\nThe above patient asked us to send you details of the treatment and advice we have provided\nthrough our service.\nIndication:\nWeight Loss\nTreatment:\nWegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen - 1 pre-\nfilled pen\nOutcome:\nTreatment prescribed and advice given\nDate\n31/01/2026\nprescribed:\nThe details of the consultation are below:\nQ No\nQuestion\nAnswer supplied\nPage , 5",
+  "icd_codes": [],
+  "medications_raw": [
+    {
+      "name": "Wegovy FlexTouch",
+      "dose": "1mg/0.75ml solution for injection 3ml pre-f",
+      "raw": "Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen - 1 pre-"
+    }
+  ],
+  "snomed": {
+    "problems": [
+      {
+        "text": "Weight Loss",
+        "category": "MEDICAL_CONDITION",
+        "snomed_code": "89362005",
+        "description": "Weight loss (finding)",
+        "confidence": 0.9350614547729492,
+        "entity_id": "8615b5bf",
+        "source": "comprehend_medical"
+      }
+    ],
+    "medications": [],
+    "diagnoses": [],
+    "all_entities": [
+      {
+        "Id": 4,
+        "Text": "treatment",
+        "Category": "TEST_TREATMENT_PROCEDURE",
+        "Type": "TREATMENT_NAME",
+        "Score": 0.5971075296401978,
+        "BeginOffset": 300,
+        "EndOffset": 309,
+        "Attributes": [],
+        "Traits": [],
+        "SNOMEDCTConcepts": [
+          {
+            "Description": "Treatment given (situation)",
+            "Code": "182991002",
+            "Score": 0.12687474489212036
+          },
+          {
+            "Description": "General treatment (procedure)",
+            "Code": "7922000",
+            "Score": 0.11792363226413727
+          },
+          {
+            "Description": "Patient requested treatment (situation)",
+            "Code": "184003006",
+            "Score": 0.11414732038974762
+          },
+          {
+            "Description": "Treatment plan given (finding)",
+            "Code": "314705003",
+            "Score": 0.0850369930267334
+          },
+          {
+            "Description": "Patient requests alternative treatment (finding)",
+            "Code": "182890002",
+            "Score": 0.07136182487010956
+          }
+        ]
+      },
+      {
+        "Id": 5,
+        "Text": "Weight Loss",
+        "Category": "MEDICAL_CONDITION",
+        "Type": "DX_NAME",
+        "Score": 0.9350614547729492,
+        "BeginOffset": 371,
+        "EndOffset": 382,
+        "Attributes": [],
+        "Traits": [
+          {
+            "Name": "SYMPTOM",
+            "Score": 0.5752319693565369
+          }
+        ],
+        "SNOMEDCTConcepts": [
+          {
+            "Description": "Weight loss (finding)",
+            "Code": "89362005",
+            "Score": 0.5540246963500977
+          },
+          {
+            "Description": "Recent weight loss (finding)",
+            "Code": "426977000",
+            "Score": 0.05800265073776245
+          },
+          {
+            "Description": "Excessive weight loss (finding)",
+            "Code": "309257005",
+            "Score": 0.05067837983369827
+          },
+          {
+            "Description": "Abnormal weight loss (finding)",
+            "Code": "267024001",
+            "Score": 0.04928820952773094
+          },
+          {
+            "Description": "Measured weight loss (observable entity)",
+            "Code": "816160009",
+            "Score": 0.043650753796100616
+          }
+        ]
+      },
+      {
+        "Id": 15,
+        "Text": "Treatment",
+        "Category": "TEST_TREATMENT_PROCEDURE",
+        "Type": "TREATMENT_NAME",
+        "Score": 0.5971075296401978,
+        "BeginOffset": 493,
+        "EndOffset": 502,
+        "Attributes": [],
+        "Traits": [],
+        "SNOMEDCTConcepts": [
+          {
+            "Description": "General treatment (procedure)",
+            "Code": "7922000",
+            "Score": 0.2383936196565628
+          },
+          {
+            "Description": "Treatment given (situation)",
+            "Code": "182991002",
+            "Score": 0.23131833970546722
+          },
+          {
+            "Description": "Treatment intent (situation)",
+            "Code": "395077000",
+            "Score": 0.1889411062002182
+          },
+          {
+            "Description": "Treated with (attribute)",
+            "Code": "28995006",
+            "Score": 0.1577238142490387
+          },
+          {
+            "Description": "Therapy (regime/therapy)",
+            "Code": "276239002",
+            "Score": 0.15571682155132294
+          }
+        ]
+      }
+    ],
+    "used_fallback": false,
+    "top3_fallback": [],
+    "used_summary_fallback": false,
+    "used_doctype_fallback": false
+  },
+  "summaries": {
+    "clinician": {
+      "summary": "Female patient presented for weight loss. Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen prescribed on 31/01/2026. Treatment plan and advice provided",
+      "confidence": 0.8
+    },
+    "patient": {
+      "summary": "female patient was prescribed Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen to help with weight loss. The treatment was prescribed on 31/01/2026. No further follow-up is required at this time. The female patient should use the medication as directed by the healthcare provider",
+      "confidence": 0.8
+    },
+    "pharmacist": {
+      "summary": "No medications prescribed. Patient attended for weight loss consultation. Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen prescribed on 31/01/2026. No other medications mentioned. Pharmacist should check for potential interactions with any other medications the patient may be taking. No other clinical details provided.",
+      "confidence": 0.8
+    },
+    "follow_up_actions": "1. GP to review patient weight loss and response to Wegovy treatment at next appointment.\n2. Patient to self-administer Wegovy 1mg/0.75ml solution for injection 3ml pre-filled pen once weekly as prescribed.\n3. Patient to report any adverse effects or lack of efficacy to GP.\n4. Pharmacist to monitor supply of Wegovy medication and ensure adequate stock for patient.",
+    "gp_actions": "1. Dispense and supply Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen as prescribed on 31/01/2026.\n2. Monitor the patient's response to the Wegovy treatment, including any weight loss and side effects.\n3. Arrange a follow-up appointment in 4-6 weeks to review the patient's progress and response to the medication.\n4. Provide the patient with guidance on the safe use and storage of the Wegovy injection pens, and advise them to report any adverse effects or concerns to the practice.",
+    "llm_confidence": 0.8
+  },
+  "gp_actions": "1. Dispense and supply Wegovy FlexTouch 1mg/0.75ml solution for injection 3ml pre-filled pen as prescribed on 31/01/2026.\n2. Monitor the patient's response to the Wegovy treatment, including any weight loss and side effects.\n3. Arrange a follow-up appointment in 4-6 weeks to review the patient's progress and response to the medication.\n4. Provide the patient with guidance on the safe use and storage of the Wegovy injection pens, and advise them to report any adverse effects or concerns to the practice.",
+  "follow_up_actions": "1. GP to review patient weight loss and response to Wegovy treatment at next appointment.\n2. Patient to self-administer Wegovy 1mg/0.75ml solution for injection 3ml pre-filled pen once weekly as prescribed.\n3. Patient to report any adverse effects or lack of efficacy to GP.\n4. Pharmacist to monitor supply of Wegovy medication and ensure adequate stock for patient.",
+  "phi_entity_count": 11
+}
