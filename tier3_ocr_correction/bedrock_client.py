@@ -125,7 +125,7 @@ def _crop_image(full_page_image: Image.Image, bbox: list) -> Image.Image:
 
     Args:
         full_page_image: PIL Image of the full document page.
-        bbox:            [x1, y1, x2, y2] in pixel coordinates.
+        bbox:            [x1, y1, x2, y2] - can be normalized (0-1) or pixel coordinates.
 
     Returns:
         A PIL Image (either the crop or the full page as fallback).
@@ -134,10 +134,23 @@ def _crop_image(full_page_image: Image.Image, bbox: list) -> Image.Image:
         if not bbox or len(bbox) < 4:
             raise ValueError("Invalid bbox — using full page.")
 
-        x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        img_w, img_h = full_page_image.size
+        x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+
+        # Check if coordinates are normalized (0-1 range) and convert to pixels
+        # Textract returns normalized coordinates, so we need to scale them
+        if all(0 <= v <= 1 for v in [x1, y1, x2, y2]):
+            # Normalized coordinates - convert to pixel values
+            x1 = int(x1 * img_w)
+            y1 = int(y1 * img_h)
+            x2 = int(x2 * img_w)
+            y2 = int(y2 * img_h)
+            logger.debug("Converted normalized bbox to pixels: [%d, %d, %d, %d]", x1, y1, x2, y2)
+        else:
+            # Already pixel coordinates
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
 
         # Clamp to image dimensions
-        img_w, img_h = full_page_image.size
         x1 = max(0, min(x1, img_w))
         y1 = max(0, min(y1, img_h))
         x2 = max(0, min(x2, img_w))
@@ -319,8 +332,35 @@ def bedrock_call(
             if not model_text:
                 raise ValueError("Model returned empty content block.")
 
-            # Parse the model's JSON response
-            parsed: dict = json.loads(model_text)
+            # Parse the model's JSON response with fallback handling
+            parsed: dict = None
+            try:
+                parsed = json.loads(model_text)
+            except json.JSONDecodeError:
+                # Try to extract fields manually if JSON is malformed
+                import re
+
+                # Extract corrected_text (handle quotes inside)
+                corrected_match = re.search(r'"corrected_text"\s*:\s*"(.*?)"(?=\s*,\s*"confidence")', model_text, re.DOTALL)
+                if not corrected_match:
+                    # Fallback: just return original text unchanged
+                    corrected_match = re.search(r'"corrected_text"\s*:\s*"([^"]*)"', model_text)
+
+                # Extract confidence
+                conf_match = re.search(r'"confidence"\s*:\s*([\d.]+)', model_text)
+
+                # Extract reasoning
+                reason_match = re.search(r'"reasoning"\s*:\s*"([^"]*)"', model_text)
+
+                if corrected_match and conf_match:
+                    parsed = {
+                        "corrected_text": corrected_match.group(1),
+                        "confidence": float(conf_match.group(1)),
+                        "reasoning": reason_match.group(1) if reason_match else "Extracted from malformed JSON"
+                    }
+                    logger.info("Recovered data from malformed JSON response")
+                else:
+                    raise ValueError(f"Could not parse model response: {model_text[:200]}")
 
             corrected_text = str(parsed.get("corrected_text", ocr_text)).strip()
             llm_confidence = float(parsed.get("confidence", 0.0))

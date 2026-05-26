@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - DEBUG=true
+    volumes:
+      - ./temp_pages:/app/temp_pages
+      - ./textract_outputs:/app/textract_outputs
+      - ./tier2_outputs:/app/tier2_outputs
+      - ./track_a_outputs:/app/track_a_outputs
+      - ./track_b_outputs:/app/track_b_outputs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
+# For local development without Docker:
+# 1. Start API: cd NLP-uk && uvicorn api.main:app --reload --port 8000
+# 2. Start Frontend: cd frontend && npm run dev

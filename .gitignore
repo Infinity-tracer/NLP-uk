@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 nlpuk
 
+
+.claude
+docs
+
 # C extensions
 *.so
 
@@ -103,3 +107,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.lock
