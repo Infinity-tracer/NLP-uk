@@ -46,14 +46,16 @@ AWS_KEY    = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET = os.getenv("AWS_SECRET_ACCESS_KEY")
 
 def make_client(service):
-    # FIX (review comment 1): Only pass explicit credentials when BOTH are set.
-    # Passing None values bypasses boto3's default credential chain (IAM role,
-    # ~/.aws/credentials, instance metadata) and causes confusing auth failures.
-    client_kwargs = {"region_name": AWS_REGION}
-    if AWS_KEY and AWS_SECRET:
-        client_kwargs["aws_access_key_id"]     = AWS_KEY
-        client_kwargs["aws_secret_access_key"] = AWS_SECRET
-    elif AWS_KEY or AWS_SECRET:
+    # Read credentials fresh at call time so that values loaded from .env
+    # after module import (or injected by tests) are always picked up.
+    key    = os.getenv("AWS_ACCESS_KEY_ID")
+    secret = os.getenv("AWS_SECRET_ACCESS_KEY")
+    region = os.getenv("AWS_REGION", AWS_REGION)
+    client_kwargs = {"region_name": region}
+    if key and secret:
+        client_kwargs["aws_access_key_id"]     = key
+        client_kwargs["aws_secret_access_key"] = secret
+    elif key or secret:
         raise ValueError(
             "Incomplete AWS credential configuration: set both "
             "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or neither "
@@ -278,9 +280,25 @@ _CLINICAL_KEYWORD_PATTERNS = [
 
 # Non-diagnostic / generic words that should never become SNOMED condition codes.
 _SNOMED_NON_CONDITION_TERMS = {
+    # Administrative / generic
     "treatment", "advice", "consultation", "review", "assessment", "follow-up",
     "follow up", "referral", "service", "doctor", "patient", "outcome", "question",
     "answer", "date", "prescribed", "prescription", "medication", "history",
+    # Vital signs / exam status — not diagnoses
+    "alert", "oriented", "vitally stable", "stable", "conscious", "coherent",
+    "responsive", "cooperative", "combative", "unresponsive", "gcse", "gcs",
+    "pulse", "bp", "spo2", "rr", "hr", "temp", "temperature", "o2 sat",
+    "blood pressure", "heart rate", "respiratory rate", "oxygen saturation",
+    # Neurological exam shorthand
+    "a&ox4", "a&ox3", "a+ox4", "a+ox3", "aox4", "aox3",
+    # Exam narrative words
+    "well", "comfortable", "distressed", "noted", "found", "seen", "reported",
+    "appearing", "appears", "presents", "complaint", "complaints", "comments",
+    # Generic abbreviations that Comprehend misidentifies
+    "pm", "am", "od", "bd", "tds", "qds", "prn", "sos", "nkda", "nka",
+    "hx", "fx", "dx", "rx", "sx", "tx", "cx", "e/o", "h/o", "k/c/o",
+    # Non-clinical filler
+    "nil", "none", "normal", "unremarkable", "nab", "nak", "no", "not",
 }
 
 def _extract_keywords_from_text(text: str) -> list:
@@ -297,31 +315,58 @@ def _extract_keywords_from_text(text: str) -> list:
 
 
 def _is_condition_like_entity(entity: dict, top_desc: str = "") -> bool:
-    """Accept clinically significant entities: conditions, diagnoses, symptoms, and
-    high-confidence PROCEDURE entities that represent ongoing clinical findings
-    (e.g. 'botox injections for migraines', 'cardiac pacemaker in situ').
-
-    Fixed based on real clinical data analysis:
-    - Previously rejected ALL PROCEDURE categories, missing botox/pacemaker/cord traction
-    - Previously rejected ANY description containing 'procedure', blocking valid codes
-    - Now allows PROCEDURE when entity score is high (>=0.7) and text is clinically specific
+    """Accept only clinically meaningful entities: actual conditions, diagnoses, and
+    significant symptoms. Filters out exam observations, vital sign notations,
+    short abbreviations, and generic status terms.
     """
-    cat = (entity.get("Category", "") or "").upper()
+    cat   = (entity.get("Category", "") or "").upper()
     etype = (entity.get("Type", "") or "").upper()
     traits = {(t.get("Name", "") or "").upper() for t in entity.get("Traits", [])}
-    txt = (entity.get("Text", "") or "").strip().lower()
-    desc = (top_desc or "").strip().lower()
+    txt   = (entity.get("Text", "") or "").strip().lower()
+    desc  = (top_desc or "").strip().lower()
     score = float(entity.get("Score", 0.0))
 
+    # Reject blank or blocklisted terms
     if not txt or txt in _SNOMED_NON_CONDITION_TERMS:
         return False
 
-    # Reject pure administrative / generic concepts with no clinical specificity.
+    # Reject very short text (1-3 chars) — almost always abbreviations or noise
+    if len(txt) <= 3:
+        return False
+
+    # Reject single ALL-CAPS tokens that are not known clinical acronyms
+    _VALID_CLINICAL_ACRONYMS = {
+        "copd", "afib", "af", "uti", "dvt", "pe", "mi", "aki", "ckd",
+        "chf", "htn", "dm", "ra", "sle", "ms", "hiv", "std", "ptsd",
+        "adhd", "ocd", "gord", "gerd", "ibs", "ibd",
+    }
+    raw_txt = (entity.get("Text", "") or "").strip()
+    if raw_txt.isupper() and len(raw_txt) <= 4 and txt not in _VALID_CLINICAL_ACRONYMS:
+        return False
+
+    # Reject pure administrative / generic categories
     if any(x in cat for x in ("MEDICATION", "TEST")):
         return False
 
-    # PROCEDURE: only reject if it is a generic administrative procedure.
-    # Allow high-confidence, clinically specific procedures (botox, pacemaker, cord traction).
+    # Reject SNOMED descriptions that are pure exam/observation findings (not diagnoses)
+    _EXAM_FINDING_DESC_PATTERNS = (
+        "mentally alert", "oriented to person", "normal vital", "vital capacity",
+        "observable entity", "pM category", "clinical finding (finding)",
+        "normal", "finding of",
+    )
+    _EXAM_FINDING_DESC_EXACT = {
+        "mentally alert (finding)",
+        "oriented to person, time and place (finding)",
+        "normal vital capacity (finding)",
+        "pm category (observable entity)",
+        "pM category (observable entity)",
+    }
+    if desc in _EXAM_FINDING_DESC_EXACT:
+        return False
+    if any(p in desc for p in _EXAM_FINDING_DESC_PATTERNS) and score < 0.85:
+        return False
+
+    # PROCEDURE: only allow high-confidence, clinically specific procedures
     _GENERIC_PROCEDURE_TERMS = {
         "evaluation procedure", "patient encounter procedure", "consultation",
         "hospital admission", "patient discharge", "follow-up encounter",
@@ -330,18 +375,15 @@ def _is_condition_like_entity(entity: dict, top_desc: str = "") -> bool:
     if "PROCEDURE" in cat or "TREATMENT" in cat:
         if desc in _GENERIC_PROCEDURE_TERMS:
             return False
-        if any(x in desc for x in ("encounter",)):
+        if "encounter" in desc:
             return False
-        # Allow only if Comprehend is sufficiently confident it is clinically specific
-        if score >= 0.65:
-            return True
-        return False
+        return score >= 0.65
 
     # ANATOMY: reject unless it is a named clinical finding (e.g. 'solitary kidney')
     if "ANATOMY" in cat:
         return score >= 0.80
 
-    # Keep condition/diagnosis/symptom signals.
+    # Keep genuine condition/diagnosis/symptom signals
     if "MEDICAL_CONDITION" in cat or "DIAGNOSIS" in cat:
         return True
     if etype in {"DX_NAME", "DIAGNOSIS", "MEDICAL_CONDITION"}:
