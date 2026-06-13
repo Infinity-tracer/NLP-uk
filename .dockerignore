@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+env/
+nlpuk/
+
+# IDE
+.idea/
+.vscode/
+.claude/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Output directories
+temp_pages/
+textract_outputs/
+tier2_outputs/
+track_a_outputs/
+track_b_outputs/
+
+# Large files
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.tiff
+*.pt
+*.pth
+*.bin
+*.safetensors
+models/
+
+# Docs
+docs/
+*.md
+
+# Keys
+*.pem
+*.key
