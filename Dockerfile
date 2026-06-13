@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libglib2.0-0 \
-    libgl1-mesa-glx \
+    libgl1 \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
