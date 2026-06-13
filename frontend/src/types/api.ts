@@ -1,8 +1,8 @@
-export type ProcessingStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'review_required';
+export type ProcessingStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'review_required' | 'success' | 'review';
 
 export interface TierStatus {
   tier: string;
-  status: ProcessingStatus;
+  status: ProcessingStatus | string;
   duration_ms?: number;
   confidence?: number;
   error?: string;
