@@ -57,7 +57,15 @@ export default function HistoryPanel({ onSelectRun, onClose }: HistoryPanelProps
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'Unknown';
     try {
-      return new Date(dateStr).toLocaleString();
+      return new Date(dateStr).toLocaleString('en-GB', {
+        timeZone: 'Europe/London',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
     } catch {
       return dateStr;
     }
