@@ -3949,6 +3949,48 @@ def get_result(doc_id):
         return jsonify(json.load(f))
 
 
+@app.route("/api/runs")
+def list_runs():
+    """List all saved processing runs with summary info."""
+    runs = []
+    for result_file in sorted(RESULTS_DIR.glob("*_result.json"), key=lambda f: f.stat().st_mtime, reverse=True):
+        try:
+            with open(result_file) as f:
+                data = json.load(f)
+                runs.append({
+                    "doc_id": data.get("doc_id", result_file.stem.replace("_result", "")),
+                    "filename": data.get("filename", "Unknown"),
+                    "processed_at": data.get("processed_at", ""),
+                    "letter_type": data.get("letter_type", ""),
+                    "unified_confidence": data.get("unified_confidence", 0),
+                    "pages_processed": data.get("pages_processed", 0),
+                    "status": "completed"
+                })
+        except Exception:
+            continue
+    return jsonify({"runs": runs, "total": len(runs)})
+
+
+@app.route("/api/runs/<doc_id>", methods=["DELETE"])
+def delete_run(doc_id):
+    """Delete a saved run and its associated files."""
+    result_path = RESULTS_DIR / f"{doc_id}_result.json"
+    upload_dir = UPLOAD_DIR / doc_id
+
+    deleted = []
+    if result_path.exists():
+        result_path.unlink()
+        deleted.append("result")
+    if upload_dir.exists():
+        import shutil
+        shutil.rmtree(upload_dir)
+        deleted.append("uploads")
+
+    if not deleted:
+        return jsonify({"error": "Run not found"}), 404
+    return jsonify({"message": f"Deleted: {', '.join(deleted)}", "doc_id": doc_id})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"Starting Clinical Document Portal — open http://127.0.0.1:{port}/ in your browser")

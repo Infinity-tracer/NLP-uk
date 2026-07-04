@@ -24,6 +24,25 @@ export async function getResult(docId: string): Promise<ProcessResult> {
   return response.data;
 }
 
+export interface RunSummary {
+  doc_id: string;
+  filename: string;
+  processed_at: string;
+  letter_type: string;
+  unified_confidence: number;
+  pages_processed: number;
+  status: string;
+}
+
+export async function listRuns(): Promise<{ runs: RunSummary[]; total: number }> {
+  const response = await api.get<{ runs: RunSummary[]; total: number }>('/api/runs');
+  return response.data;
+}
+
+export async function deleteRun(docId: string): Promise<void> {
+  await api.delete(`/api/runs/${docId}`);
+}
+
 export function getPageImageUrl(docId: string, filename: string): string {
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
   return `${baseUrl}/pages/${docId}/${filename}`;

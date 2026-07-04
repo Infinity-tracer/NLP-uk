@@ -6,6 +6,7 @@ import ProcessingPanel from './components/ProcessingPanel';
 import DocumentViewer from './components/DocumentViewer';
 import DetailsPanel from './components/DetailsPanel';
 import RightPanel from './components/RightPanel';
+import HistoryPanel from './components/HistoryPanel';
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('upload');
@@ -13,6 +14,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('details');
+  const [showHistory, setShowHistory] = useState(false);
 
   const handleFileUpload = useCallback(async (file: File) => {
     setCurrentFile(file);
@@ -53,6 +55,13 @@ export default function App() {
     URL.revokeObjectURL(url);
   }, [result]);
 
+  const handleSelectFromHistory = useCallback((selectedResult: ProcessResult) => {
+    setResult(selectedResult);
+    setCurrentFile(null);
+    setAppState('result');
+    setShowHistory(false);
+  }, []);
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Sidebar */}
@@ -60,17 +69,27 @@ export default function App() {
         <div className="w-11 h-11 bg-nhs-blue rounded-lg flex items-center justify-center mb-4">
           <span className="text-white font-black text-sm tracking-tight">NHS</span>
         </div>
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-100 bg-white/15 mb-1" title="Dashboard">
-          <span className="text-xl">🏠</span>
+        <button
+          onClick={handleReset}
+          className={`w-11 h-11 rounded-lg flex items-center justify-center text-white mb-1 ${
+            appState === 'upload' ? 'opacity-100 bg-white/15' : 'opacity-70 hover:opacity-100 hover:bg-white/15'
+          }`}
+          title="New Upload"
+        >
+          <span className="text-xl">📤</span>
+        </button>
+        <button
+          onClick={() => setShowHistory(true)}
+          className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1"
+          title="History"
+        >
+          <span className="text-xl">📋</span>
         </button>
         <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Documents">
           <span className="text-xl">📄</span>
         </button>
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Users">
-          <span className="text-xl">👥</span>
-        </button>
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Sync">
-          <span className="text-xl">🔄</span>
+        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Settings">
+          <span className="text-xl">⚙️</span>
         </button>
         <div className="flex-1" />
         <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15" title="Profile">
@@ -128,6 +147,14 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {/* History Modal */}
+      {showHistory && (
+        <HistoryPanel
+          onSelectRun={handleSelectFromHistory}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
   );
 }
