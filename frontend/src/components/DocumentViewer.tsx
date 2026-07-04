@@ -1,6 +1,37 @@
 import { useState, useEffect } from 'react';
 import type { ProcessResult } from '../api/types';
 
+function PageImage({ url, index, total }: { url: string; index: number; total: number }) {
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
+
+  return (
+    <div className="w-full">
+      <div className="text-xs text-gray-400 text-center mb-1">
+        Page {index + 1} of {total}
+      </div>
+      {status === 'error' ? (
+        <div className="w-full h-64 bg-gray-200 rounded shadow-lg flex items-center justify-center">
+          <div className="text-center text-gray-500">
+            <div className="text-2xl mb-2">📄</div>
+            <div className="text-sm">Page {index + 1}</div>
+            <div className="text-xs text-gray-400 mt-1">Image unavailable</div>
+          </div>
+        </div>
+      ) : (
+        <img
+          src={fullUrl}
+          alt={`Page ${index + 1}`}
+          className={`w-full rounded shadow-lg bg-white ${status === 'loading' ? 'animate-pulse' : ''}`}
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('error')}
+        />
+      )}
+    </div>
+  );
+}
+
 interface DocumentViewerProps {
   result: ProcessResult;
   file: File | null;
@@ -55,19 +86,7 @@ export default function DocumentViewer({ result, file }: DocumentViewerProps) {
         <div className="flex flex-col items-center gap-3">
           {pages.length > 0 ? (
             pages.map((url, i) => (
-              <div key={i} className="w-full">
-                <div className="text-xs text-gray-400 text-center mb-1">
-                  Page {i + 1} of {pages.length}
-                </div>
-                <img
-                  src={url}
-                  alt={`Page ${i + 1}`}
-                  className="w-full rounded shadow-lg bg-white"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              </div>
+              <PageImage key={i} url={url} index={i} total={pages.length} />
             ))
           ) : localPreview ? (
             <img

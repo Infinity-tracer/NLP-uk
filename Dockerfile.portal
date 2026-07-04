@@ -24,6 +24,9 @@ COPY preprocessing.py .
 COPY hipaa_compliance.py .
 COPY insights/ ./insights/
 
+# Create directories for uploads and results
+RUN mkdir -p portal_uploads portal_results
+
 # Render/Railway/HuggingFace use the PORT env variable
 # Default to 5000 for local dev
 ENV PORT=5000

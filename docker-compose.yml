@@ -14,7 +14,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - PORT=5000
     volumes:
-      - ./temp_pages:/app/temp_pages
+      - ./portal_uploads:/app/portal_uploads
       - ./portal_results:/app/portal_results
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
