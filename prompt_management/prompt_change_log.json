@@ -1,0 +1,29 @@
+[
+  {
+    "timestamp": "2026-04-09T00:00:00Z",
+    "change_type": "INITIALIZE_PROMPT_REGISTRY",
+    "template": "medical_summarization",
+    "before_version": null,
+    "after_version": "v1",
+    "changed_by": "SYSTEM",
+    "rationale": "Baseline medical summarization prompt created for Track B."
+  },
+  {
+    "timestamp": "2026-04-09T00:00:00Z",
+    "change_type": "INITIALIZE_PROMPT_REGISTRY",
+    "template": "role_based_actions",
+    "before_version": null,
+    "after_version": "v1",
+    "changed_by": "SYSTEM",
+    "rationale": "Baseline role action prompt created for Track B."
+  },
+  {
+    "timestamp": "2026-04-09T00:00:00Z",
+    "change_type": "INITIALIZE_PROMPT_REGISTRY",
+    "template": "error_correction",
+    "before_version": null,
+    "after_version": "v1",
+    "changed_by": "SYSTEM",
+    "rationale": "Baseline anti-hallucination/error-correction prompt created."
+  }
+]

@@ -1,0 +1,161 @@
+export interface PatientInfo {
+  name: string;
+  nhs_number: string;
+  dob: string;
+  sex: string;
+  address?: string;
+  hospital_number?: string;
+  gp_practice?: string;
+  gravida_parity?: string;
+  edd?: string;
+  gestational_age?: string;
+  pathways_urgency?: string;
+  presenting_complaint?: string;
+}
+
+export interface SNOMEDEntity {
+  text: string;
+  category: string;
+  snomed_code: string;
+  description: string;
+  confidence: number;
+  entity_id: string;
+  source: string;
+}
+
+export interface SNOMEDData {
+  problems: SNOMEDEntity[];
+  medications: SNOMEDEntity[];
+  diagnoses: SNOMEDEntity[];
+  all_entities: SNOMEDEntity[];
+  used_fallback: boolean;
+  top3_fallback: SNOMEDEntity[];
+  used_summary_fallback: boolean;
+  used_doctype_fallback: boolean;
+  snomed_confidence?: number;
+}
+
+export interface Medication {
+  name: string;
+  dose: string;
+  raw: string;
+}
+
+export interface StructuredFields {
+  admission_date?: string;
+  discharge_date?: string;
+  appointment_date?: string;
+  consultant?: string;
+  department?: string;
+  hospital?: string;
+  gp_actions?: string;
+  diagnosis_text?: string;
+  admission_method?: string;
+  discharge_method?: string;
+  procedure?: string;
+  indication?: string;
+  impression?: string;
+}
+
+export interface Summary {
+  summary: string;
+  confidence: number;
+}
+
+export interface RoleActions {
+  doctor: string[];
+  pharmacist: string[];
+  reception: string[];
+}
+
+export interface ActionsStructured {
+  sender_actions: RoleActions;
+  gp_surgery_actions: RoleActions;
+}
+
+export interface Summaries {
+  clinician: Summary;
+  patient: Summary;
+  pharmacist: Summary;
+  follow_up_actions: string;
+  actions_structured: ActionsStructured;
+  llm_confidence: number;
+}
+
+export interface PipelineStage {
+  status: 'done' | 'partial' | 'error' | 'skipped' | 'queued_for_layoutlmv3';
+  confidence?: number;
+  note?: string;
+  error?: string;
+  pages?: number;
+  chars_extracted?: number;
+  entities_found?: number;
+  phi_entities_detected?: number;
+  letter_type?: string;
+}
+
+export interface PipelineStages {
+  tier0?: PipelineStage;
+  tier1?: PipelineStage;
+  tier2?: PipelineStage;
+  track_a?: PipelineStage;
+  track_b?: PipelineStage;
+  hipaa?: PipelineStage;
+}
+
+export interface ClinicalSpecifics {
+  [key: string]: string | number | Record<string, string | number>;
+}
+
+export interface ProcessResult {
+  doc_id: string;
+  filename: string;
+  processed_at: string;
+  status: 'processing' | 'processed' | 'review_required' | 'error';
+  error?: string;
+
+  pages_processed: number;
+  pipeline_stages: PipelineStages;
+  unified_confidence: number;
+  confidence_threshold: number;
+  requires_review: boolean;
+
+  letter_type: string;
+  hospital_trust: string;
+  is_sensitive: boolean;
+
+  preview_pages: string[];
+  preview_image: string | null;
+
+  patient_info: PatientInfo;
+  structured: StructuredFields;
+  clinical_specifics: ClinicalSpecifics;
+
+  extracted_text: string;
+  icd_codes: string[];
+  medications_raw: Medication[];
+
+  snomed: SNOMEDData;
+  summaries: Summaries;
+  actions_structured: ActionsStructured;
+  follow_up_actions: string;
+
+  phi_entity_count: number;
+}
+
+export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
+
+export type AppState = 'upload' | 'processing' | 'result';
+
+export const LETTER_TYPE_BUCKETS = [
+  { key: 'HOSP', label: 'Hospital Discharge Summary (after admission into hospital)' },
+  { key: 'CLIN', label: 'Clinical Letters/Report (after visiting specialists)' },
+  { key: '111', label: '111 Report (seeking advice from Clinician over phone)' },
+  { key: 'ED', label: 'Accident & Emergency Department report' },
+  { key: 'AMB', label: 'Ambulance Report (When emergency services are called)' },
+  { key: 'PRIV', label: 'Private Specialists clinical letter' },
+  { key: 'EXT', label: 'External service providers (Boots, Spec savers – for Eye & ENT)' },
+  { key: 'DES', label: 'Diabetic eye screening reports' },
+  { key: 'OOH', label: 'Out of hours (East Berkshire Primary Care)' },
+  { key: 'MISC', label: 'Miscellaneous' },
+] as const;

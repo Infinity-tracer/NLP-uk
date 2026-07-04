@@ -1,0 +1,34 @@
+{
+  "environment": "staging",
+  "aws": {
+    "region": "us-east-1",
+    "credentials_mode": "environment_or_role"
+  },
+  "api_endpoints": {
+    "documents_base_url": "https://staging-api.example.com",
+    "audit_base_url": "https://staging-api.example.com"
+  },
+  "model_parameters": {
+    "confidence_threshold": 0.85,
+    "weights": {
+      "textract": 0.25,
+      "comprehend": 0.25,
+      "faiss": 0.25,
+      "llm_logprobs": 0.25
+    },
+    "chunk_size": 500,
+    "chunk_overlap": 50
+  },
+  "feature_flags": {
+    "enable_tier3": true,
+    "enable_semantic_fallback": true,
+    "enable_validation_layer": true,
+    "enable_prompt_ab_testing": true
+  },
+  "secrets": {
+    "provider": "aws_secrets_manager",
+    "secret_names": [
+      "nlp-uk/staging/app"
+    ]
+  }
+}

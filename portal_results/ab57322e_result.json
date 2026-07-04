@@ -1,0 +1,24 @@
+{
+  "doc_id": "ab57322e",
+  "filename": "ab57322e_XX_9._476_028_2297.pdf",
+  "processed_at": "2026-05-11T16:02:06.667046",
+  "status": "error",
+  "pipeline_stages": {
+    "tier0": {
+      "status": "done",
+      "note": "document_handler: 1 page(s) from .PDF | OpenCV preprocessing: applied"
+    },
+    "tier1": {
+      "status": "error",
+      "error": "An error occurred (InvalidSignatureException) when calling the AnalyzeDocument operation: The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
+    }
+  },
+  "requires_review": false,
+  "pages_processed": 1,
+  "preview_pages": [
+    "/pages/ab57322e/orig_01.png",
+    "/pages/ab57322e/orig_02.png"
+  ],
+  "preview_image": "/pages/ab57322e/orig_01.png",
+  "error": "Textract failed: An error occurred (InvalidSignatureException) when calling the AnalyzeDocument operation: The request signature we calculated does not match the signature you provided. Check your AWS Secret Access Key and signing method. Consult the service documentation for details."
+}

@@ -1,31 +1,29 @@
 version: '3.8'
 
 services:
-  api:
+  # Portal backend (Flask) - serves /api/process and /api/result endpoints
+  portal:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.portal
     ports:
-      - "8000:8000"
+      - "5000:5000"
     environment:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - CORS_ORIGINS=*
-      - DEBUG=true
+      - PORT=5000
     volumes:
       - ./temp_pages:/app/temp_pages
-      - ./textract_outputs:/app/textract_outputs
-      - ./tier2_outputs:/app/tier2_outputs
-      - ./track_a_outputs:/app/track_a_outputs
-      - ./track_b_outputs:/app/track_b_outputs
+      - ./portal_results:/app/portal_results
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  # React frontend with nginx
   frontend:
     build:
       context: ./frontend
@@ -33,8 +31,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api
+      - portal
 
 # For local development without Docker:
-# 1. Start API: cd NLP-uk && uvicorn api.main:app --reload --port 8000
+# 1. Start Portal: python portal.py
 # 2. Start Frontend: cd frontend && npm run dev

@@ -1,6 +1,6 @@
-import boto3
+from hipaa_compliance import create_secure_client
 
-sqs_client = boto3.client('sqs', region_name='us-east-1')
+sqs_client = create_secure_client('sqs', region_name='us-east-1')
 
 def setup_pipeline_queues():
     """
@@ -13,7 +13,9 @@ def setup_pipeline_queues():
         'TrackA_Entity_SNOMED_Queue',
         'TrackB_Summary_Queue',
         'Tier2_LayoutLM_Queue',
-        'Tier3_Escalation_Queue'
+        'Tier3_Escalation_Queue',
+        'Confidence_High_Bypass_Queue',
+        'Confidence_Low_Review_Queue'
     ]
 
     queue_urls = {}

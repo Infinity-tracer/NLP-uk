@@ -7,18 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-        },
+        'nhs-blue': '#005EB8',
+        'nhs-dark': '#003087',
+        'nhs-warm': '#768692',
+        'nhs-green': '#009639',
+        'nhs-red': '#DA291C',
+        'nhs-yellow': '#FFB81C',
       },
     },
   },
