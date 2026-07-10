@@ -737,7 +737,14 @@ Extracted clinical entities:
             "messages": [{"role": "user", "content": clean_prompt}]
         })
         resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
-        raw = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        resp_body = json.loads(resp["body"].read())
+        # Handle different response formats
+        if "content" in resp_body and resp_body["content"]:
+            raw = resp_body["content"][0].get("text", "").strip()
+        elif "completion" in resp_body:
+            raw = resp_body["completion"].strip()
+        else:
+            raw = str(resp_body).strip()
         # Belt-and-suspenders: strip any residual markdown Claude ignored
         import re as _re
         clean = _re.sub(r'\*{1,2}([^*\n]+)\*{1,2}', r'\1', raw)  # **bold** / *italic*
