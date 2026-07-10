@@ -197,7 +197,7 @@ DOCUMENT_TYPES: Dict[str, dict] = {
     # ── Prefix 8: Ophthalmology outpatient ───────────────────────────────────
     "Ophthalmology Letter": {
         "prefix": "8",
-        "confidence_threshold": 0.70,
+        "confidence_threshold": 0.95,
         "domain": "Ophthalmology / medical retina",
         "signals": ["diabetic retinopathy", "medical retina", "ophthalmology",
                     "proliferative retinopathy", "macular oedema", "visual acuity",
