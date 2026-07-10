@@ -691,7 +691,7 @@ def _rewrite_summary_without_age(summary_text: str, patient_sex: str = "") -> st
 def run_bedrock_summarization(text: str, snomed_data: dict, letter_type: str = "", patient_sex: str = "") -> dict:
     """Generate role-based summaries via Claude on Bedrock, tailored per document type."""
     client = make_client("bedrock-runtime")
-    MODEL  = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    MODEL  = "arn:aws:bedrock:eu-west-2:654654155641:inference-profile/eu.anthropic.claude-sonnet-5"
 
     problems  = [e["text"] for e in snomed_data.get("problems", [])]
     meds      = [e["text"] for e in snomed_data.get("medications", [])]
