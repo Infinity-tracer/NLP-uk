@@ -1207,21 +1207,92 @@ Output ONLY the JSON object, nothing else."""
     except Exception as e:
         import sys
         print(f"[WARN] Comprehensive extraction failed: {e}", file=sys.stderr)
-        return {
-            "event_date": "",
-            "letter_date": "",
-            "problems": [],
-            "treatments": [],
-            "medications": [],
-            "investigations": [],
-            "diagnoses": [],
-            "conclusion": "",
-            "recommendation": "",
-            "diary_events": [],
-            "actions_patient": [],
-            "actions_patient_booking": [],
-            "extraction_error": str(e)
-        }
+        # Fallback: use regex to extract key fields from text
+        fallback = extract_plan_and_actions_fallback(text)
+        fallback["extraction_error"] = str(e)
+        return fallback
+
+
+def extract_plan_and_actions_fallback(text: str) -> dict:
+    """Fallback extraction using regex when Claude fails.
+    Extracts from 'Plan and Requested Actions' section."""
+    import re
+
+    result = {
+        "event_date": "",
+        "letter_date": "",
+        "problems": [],
+        "treatments": [],
+        "medications": [],
+        "investigations": [],
+        "diagnoses": [],
+        "conclusion": "",
+        "recommendation": "",
+        "diary_events": [],
+        "actions_gp_doctor": [],
+        "actions_gp_pharmacist": [],
+        "actions_gp_reception": [],
+        "actions_patient": [],
+        "actions_patient_booking": [],
+    }
+
+    # Extract Plan and Requested Actions section
+    plan_match = re.search(
+        r'Plan and Requested Actions[:\s]*\n(.*?)(?=\n\s*\n|\nSafety Alerts|\nPast Medical|\nMedications|\Z)',
+        text, re.IGNORECASE | re.DOTALL
+    )
+
+    if plan_match:
+        plan_text = plan_match.group(1).strip()
+        lines = [l.strip() for l in plan_text.split('\n') if l.strip()]
+
+        for line in lines:
+            ll = line.lower()
+            # Diary events - things with time references
+            if any(x in ll for x in ['week', 'month', 'day', 'repeat', 'review', 'follow', 'check']):
+                result["diary_events"].append({
+                    "event": line,
+                    "due_date": "As specified",
+                    "responsible_party": "GP" if 'gp' in ll else "Patient/GP"
+                })
+                # Also add to GP actions if it's clearly for GP
+                if any(x in ll for x in ['repeat blood', 'arrange', 'refer', 'prescribe', 'review']):
+                    result["actions_gp_doctor"].append(line)
+            # Blood form given = sender action
+            elif 'blood form' in ll or 'form given' in ll:
+                result["diary_events"].append({
+                    "event": line,
+                    "due_date": "Use form provided",
+                    "responsible_party": "Patient"
+                })
+            # Cannula removed = completed (not an action)
+            # But note it in conclusion
+            elif 'removed' in ll or 'completed' in ll:
+                if not result["conclusion"]:
+                    result["conclusion"] = line
+
+    # Extract dates from Admission Details section
+    admission_match = re.search(r'Admission Details.*?Date[:\s]*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', text, re.IGNORECASE | re.DOTALL)
+    if admission_match:
+        result["event_date"] = admission_match.group(1)
+
+    # Extract discharge/letter date
+    discharge_match = re.search(r'(?:Discharge|Letter).*?Date[:\s]*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', text, re.IGNORECASE | re.DOTALL)
+    if discharge_match:
+        result["letter_date"] = discharge_match.group(1)
+
+    # Extract header date (e.g., "27 APR 2026")
+    header_date = re.search(r'(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{4})', text[:500], re.IGNORECASE)
+    if header_date and not result["letter_date"]:
+        months = {'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06',
+                  'JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12'}
+        d, m, y = header_date.groups()
+        result["letter_date"] = f"{d.zfill(2)}/{months[m.upper()]}/{y}"
+
+    import sys
+    print(f"[DEBUG] Fallback extraction: diary_events={len(result['diary_events'])}, gp_actions={len(result['actions_gp_doctor'])}", file=sys.stderr)
+
+    return result
 
 
 def extract_hospital_trust(text: str) -> str:
