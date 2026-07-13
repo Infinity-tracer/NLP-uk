@@ -1248,26 +1248,38 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
 
         for line in lines:
             ll = line.lower()
-            # Diary events - things with time references
-            if any(x in ll for x in ['week', 'month', 'day', 'repeat', 'review', 'follow', 'check']):
-                result["diary_events"].append({
-                    "event": line,
-                    "due_date": "As specified",
-                    "responsible_party": "GP" if 'gp' in ll else "Patient/GP"
-                })
-                # Also add to GP actions if it's clearly for GP
-                if any(x in ll for x in ['repeat blood', 'arrange', 'refer', 'prescribe', 'review']):
-                    result["actions_gp_doctor"].append(line)
-            # Blood form given = sender action
+
+            # ALL plan items should be in diary events / follow-up
+            # Determine responsible party and due date based on content
+            responsible = "GP"
+            due_date = "As specified"
+
+            if any(x in ll for x in ['week', 'month', 'day']):
+                # Extract time reference
+                import re as _re
+                time_match = _re.search(r'(\d+)\s*(week|month|day)s?', ll)
+                if time_match:
+                    due_date = f"{time_match.group(1)} {time_match.group(2)}s"
+
+            if 'patient' in ll or 'blood form given' in ll or 'form given' in ll:
+                responsible = "Patient"
+                due_date = "Use form provided" if 'form' in ll else due_date
+
+            # Add ALL items to diary events
+            result["diary_events"].append({
+                "event": line,
+                "due_date": due_date,
+                "responsible_party": responsible
+            })
+
+            # Categorize for GP actions
+            if any(x in ll for x in ['repeat blood', 'advised', 'arrange', 'refer', 'prescribe', 'review', 'bloods']):
+                result["actions_gp_doctor"].append(line)
             elif 'blood form' in ll or 'form given' in ll:
-                result["diary_events"].append({
-                    "event": line,
-                    "due_date": "Use form provided",
-                    "responsible_party": "Patient"
-                })
-            # Cannula removed = completed (not an action)
-            # But note it in conclusion
-            elif 'removed' in ll or 'completed' in ll:
+                # Blood form given - Reception should note this
+                result["actions_gp_reception"].append(line)
+            elif 'removed' in ll or 'cannula' in ll:
+                # Procedure completed - note for records
                 if not result["conclusion"]:
                     result["conclusion"] = line
 
