@@ -1078,6 +1078,7 @@ CRITICAL RULES:
 3. For SNOMED codes: provide the most specific SNOMED CT code you know for each clinical term
 4. If a field has no relevant current information, use empty array []
 5. Dates should be in DD/MM/YYYY format
+6. READ THE "Plan and Requested Actions" SECTION CAREFULLY - this contains critical GP actions
 
 Document Type: {letter_type}
 
@@ -1086,13 +1087,13 @@ DOCUMENT TEXT:
 
 Return a JSON object with this EXACT structure (no markdown, no explanation):
 {{
-  "event_date": "DD/MM/YYYY or empty string if not found",
-  "letter_date": "DD/MM/YYYY or empty string if not found",
+  "event_date": "DD/MM/YYYY - the date of the clinical event/procedure/admission",
+  "letter_date": "DD/MM/YYYY - the date the letter was written/sent",
   "problems": [
     {{"term": "clinical term", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
   "treatments": [
-    {{"term": "treatment name", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+    {{"term": "treatment name e.g. IV iron infusion, chemotherapy, physiotherapy", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
   "medications": [
     {{"term": "drug name", "dose": "dose if mentioned", "frequency": "frequency if mentioned", "snomed_code": "code", "is_historical": false}}
@@ -1106,13 +1107,22 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
   "conclusion": "Brief clinical conclusion from the letter",
   "recommendation": "Recommendations stated in the letter",
   "diary_events": [
-    {{"event": "what needs to happen", "due_date": "when", "responsible_party": "who"}}
+    {{"event": "what needs to happen", "due_date": "when (e.g., 4 weeks after transfusion, 3 months)", "responsible_party": "GP/Patient/Hospital"}}
+  ],
+  "actions_gp_doctor": [
+    "Actions requiring GP doctor - e.g., 'Arrange repeat bloods 4 weeks after transfusion', 'Review blood results', 'Refer to specialist'"
+  ],
+  "actions_gp_pharmacist": [
+    "Actions requiring GP pharmacist - e.g., 'Add medication to repeat', 'Review drug interactions'"
+  ],
+  "actions_gp_reception": [
+    "Actions requiring GP reception - e.g., 'Book follow-up appointment', 'Send referral letter'"
   ],
   "actions_patient": [
-    "Specific action patient must take (e.g., fasting, medication timing)"
+    "Actions patient must take - e.g., 'Fast before blood test', 'Take medication at specific time'"
   ],
   "actions_patient_booking": [
-    "Appointments patient needs to book (e.g., blood test, GP review)"
+    "Appointments patient needs to book - e.g., 'Book blood test at GP', 'Book follow-up review'"
   ]
 }}
 
@@ -1216,7 +1226,28 @@ def infer_letter_type(text: str) -> str:
     Priority order: most specific/distinct signals first to prevent false matches.
     """
     t = text.lower()
-    # ── Highest specificity first ────────────────────────────────────────────
+    # ── Priority 1: Document TYPE identifiers (from header/title) ────────────
+    # These are explicit document type markers - check FIRST before content-based matching
+
+    # Generic discharge summaries - HIGHEST PRIORITY as it's a document type marker
+    if any(x in t[:1500] for x in ["discharge summary"]):
+        # Check for specialty subtypes within discharge summaries
+        if any(x in t for x in ["mental health inpatient discharge", "prospect park hospital",
+                                  "crhtt", "cmht", "snowdrop ward", "section 2", "section 3",
+                                  "mental health act", "inpatient consultant"]):
+            return "Mental Health Inpatient Discharge"
+        if any(x in t for x in ["antenatal discharge", "estimate delivery date", "estimate gestational age",
+                                  "gravida & parity", "reduced fetal movement", "mdau"]):
+            return "Antenatal Discharge Summary"
+        if any(x in t for x in ["camhs", "child and adolescent", "brief psychosocial intervention"]):
+            return "CAMHS Discharge Summary"
+        # Check for Nephrology/Renal specialty
+        if any(x in t for x in ["nephrology", "renal capd", "renal medicine", "kidney unit",
+                                  "nephrologist", "berkshire kidney", "egfr", "dialysis"]):
+            return "Renal / Nephrology Letter"
+        return "Discharge Summary"
+
+    # ── Priority 2: Highly specific document types ────────────────────────────
     # SCAS Ambulance Clinical Reports — very distinct vocabulary
     if any(x in t for x in ["south central ambulance service", "patient clinical report",
                               "gp patient report v3", "scas clinician", "news2 score",
@@ -1229,12 +1260,13 @@ def infer_letter_type(text: str) -> str:
                               "erefer referral", "referral id number", "triager action required",
                               "odtc.co.uk", "epiretinal membrane", "specsavers"]):
         return "Ophthalmology Referral"
-    # Ophthalmology Outpatient / Medical Retina (must come before generic ophthalmology)
-    if any(x in t for x in ["diabetic retinopathy", "medical retina",
-                              "proliferative retinopathy", "macular oedema",
-                              "intraocular pressure", "fundus exam", "prp", "panretinal",
-                              "neovascularisation", "nvd", "nve", "slit lamp"]):
-        return "Ophthalmology Letter"
+    # Ophthalmology Outpatient / Medical Retina - requires ophthalmology context + specific terms
+    # Must NOT match just because patient has diabetes (which often has retinopathy history)
+    if any(x in t[:1500] for x in ["ophthalmology", "medical retina", "eye clinic", "ophthalmic"]):
+        if any(x in t for x in ["diabetic retinopathy", "proliferative retinopathy", "macular oedema",
+                                  "intraocular pressure", "fundus exam", "prp", "panretinal",
+                                  "neovascularisation", "nvd", "nve", "slit lamp", "visual acuity"]):
+            return "Ophthalmology Letter"
     # Expert Health / GLP-1 prescribing — very distinct brand names
     if any(x in t for x in ["expert health", "notification of consultation", "kwikpen",
                               "weight management", "glp-1", "mounjaro", "semaglutide",
@@ -1249,12 +1281,12 @@ def infer_letter_type(text: str) -> str:
     if any(x in t for x in ["111 first ed report", "nhs111 encounter", "pathways disposition",
                               "pathways assessment", "attendance activity", "111 first"]):
         return "111 First ED Report"
-    # Mental Health Inpatient Discharge — check BEFORE generic discharge summary
+    # Mental Health Inpatient Discharge (backup check for docs without "discharge summary" header)
     if any(x in t for x in ["mental health inpatient discharge", "prospect park hospital",
                               "crhtt", "cmht", "snowdrop ward", "section 2", "section 3",
                               "mental health act", "inpatient consultant"]):
         return "Mental Health Inpatient Discharge"
-    # Antenatal Discharge Summary — check BEFORE generic maternity
+    # Antenatal Discharge Summary (backup check)
     if any(x in t for x in ["antenatal discharge", "estimate delivery date", "estimate gestational age",
                               "gravida & parity", "reduced fetal movement", "mdau",
                               "antenatal discharge summary"]):
@@ -1279,12 +1311,12 @@ def infer_letter_type(text: str) -> str:
     if any(x in t for x in ["endoscopy", "ogd", "colonoscopy", "gastroscopy", "oesophageal",
                               "colonography", "procedure report", "endoscopist"]):
         return "Procedure Report"
-    # CAMHS / paediatric mental health
+    # CAMHS / paediatric mental health (backup check)
     if any(x in t for x in ["camhs", "child and adolescent", "mental health service",
                               "brief psychosocial intervention", "bpi"]):
         return "CAMHS Discharge Summary"
-    # Generic discharge summaries
-    if any(x in t for x in ["discharge summary", "discharge date", "discharging consultant",
+    # Generic discharge summaries (backup check - primary check is at top)
+    if any(x in t for x in ["discharge date", "discharging consultant",
                               "length of stay", "discharge summary completed by"]):
         return "Discharge Summary"
     # Psychiatry outpatient
@@ -2266,6 +2298,16 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         "sender_actions":    {"doctor": [], "pharmacist": [], "reception": []},
         "gp_surgery_actions":{"doctor": [], "pharmacist": [], "reception": []},
     })
+
+    # Merge GP actions from comprehensive extraction (Claude Sonnet 5) - these are often more accurate
+    # Only add if comprehensive extraction found actions and base is empty
+    if comprehensive.get("actions_gp_doctor") and not base_actions["gp_surgery_actions"]["doctor"]:
+        base_actions["gp_surgery_actions"]["doctor"] = comprehensive.get("actions_gp_doctor", [])
+    if comprehensive.get("actions_gp_pharmacist") and not base_actions["gp_surgery_actions"]["pharmacist"]:
+        base_actions["gp_surgery_actions"]["pharmacist"] = comprehensive.get("actions_gp_pharmacist", [])
+    if comprehensive.get("actions_gp_reception") and not base_actions["gp_surgery_actions"]["reception"]:
+        base_actions["gp_surgery_actions"]["reception"] = comprehensive.get("actions_gp_reception", [])
+
     # Add patient-specific action categories from comprehensive extraction
     base_actions["patient_actions"] = comprehensive.get("actions_patient", [])
     base_actions["patient_booking"] = comprehensive.get("actions_patient_booking", [])
