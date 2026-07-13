@@ -1131,13 +1131,22 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
 Output ONLY the JSON object, nothing else."""
 
     try:
+        import sys
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 2000,
             "messages": [{"role": "user", "content": extraction_prompt}]
         })
+        print(f"[DEBUG] Calling Bedrock for comprehensive extraction...", file=sys.stderr)
         resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
-        resp_body = json.loads(resp["body"].read())
+        resp_bytes = resp["body"].read()
+        print(f"[DEBUG] Bedrock response bytes length: {len(resp_bytes)}", file=sys.stderr)
+
+        if not resp_bytes:
+            raise ValueError("Empty response from Bedrock")
+
+        resp_body = json.loads(resp_bytes)
+        print(f"[DEBUG] resp_body keys: {list(resp_body.keys())}", file=sys.stderr)
 
         # Handle different response formats (same as call_claude)
         if "content" in resp_body and resp_body["content"]:
@@ -1147,9 +1156,7 @@ Output ONLY the JSON object, nothing else."""
         else:
             raw = str(resp_body).strip()
 
-        # Debug: log raw response
-        import sys
-        print(f"[DEBUG] Comprehensive extraction raw (first 500): {raw[:500]}", file=sys.stderr)
+        print(f"[DEBUG] Comprehensive extraction raw (first 500): {raw[:500] if raw else 'EMPTY'}", file=sys.stderr)
 
         # Clean and parse JSON
         import re as _re
