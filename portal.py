@@ -1137,7 +1137,15 @@ Output ONLY the JSON object, nothing else."""
             "messages": [{"role": "user", "content": extraction_prompt}]
         })
         resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
-        raw = json.loads(resp["body"].read())["content"][0]["text"].strip()
+        resp_body = json.loads(resp["body"].read())
+
+        # Handle different response formats (same as call_claude)
+        if "content" in resp_body and resp_body["content"]:
+            raw = resp_body["content"][0].get("text", "").strip()
+        elif "completion" in resp_body:
+            raw = resp_body["completion"].strip()
+        else:
+            raw = str(resp_body).strip()
 
         # Clean and parse JSON
         import re as _re
