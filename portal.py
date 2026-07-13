@@ -1215,7 +1215,7 @@ Output ONLY the JSON object, nothing else."""
 
 def extract_plan_and_actions_fallback(text: str) -> dict:
     """Fallback extraction using regex when Claude fails.
-    Extracts from 'Plan and Requested Actions' section."""
+    Extracts from 'Plan and Requested Actions' or 'Plan' section."""
     import re
 
     result = {
@@ -1236,28 +1236,61 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
         "actions_patient_booking": [],
     }
 
-    # Extract Plan and Requested Actions section
-    plan_match = re.search(
+    # Try multiple patterns for Plan section (different letter formats)
+    plan_patterns = [
+        # Discharge summary format: "Plan and Requested Actions"
         r'Plan and Requested Actions[:\s]*\n(.*?)(?=\n\s*\n|\nSafety Alerts|\nPast Medical|\nMedications|\Z)',
-        text, re.IGNORECASE | re.DOTALL
-    )
+        # Clinic letter format: "Plan" followed by bullet points or lines
+        r'(?:^|\n)Plan\s*\n((?:(?:[-•]\s*)?[A-Z][^\n]+\n?)+)',
+        # Alternative: Plan section until next section or paragraph break
+        r'(?:^|\n)Plan[:\s]*\n(.*?)(?=\n(?:Yours|I reviewed|Dear|CC:|$))',
+    ]
 
-    if plan_match:
-        plan_text = plan_match.group(1).strip()
+    plan_text = None
+    for pattern in plan_patterns:
+        plan_match = re.search(pattern, text, re.IGNORECASE | re.DOTALL | re.MULTILINE)
+        if plan_match:
+            plan_text = plan_match.group(1).strip()
+            break
+
+    # Also extract Diagnosis section (for orthopaedic letters)
+    diagnosis_match = re.search(
+        r'(?:^|\n)Diagnosis\s*\n(.*?)(?=\n(?:Plan|Date of injury|I reviewed|Dear|$))',
+        text, re.IGNORECASE | re.DOTALL | re.MULTILINE
+    )
+    if diagnosis_match:
+        diag_text = diagnosis_match.group(1).strip()
+        for line in diag_text.split('\n'):
+            line = line.strip()
+            if line and not line.lower().startswith('date'):
+                result["diagnoses"].append({"term": line})
+                if not result["conclusion"]:
+                    result["conclusion"] = line
+
+    # Extract Date of injury for orthopaedic letters
+    injury_date_match = re.search(r'Date of injury[:\s]*(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', text, re.IGNORECASE)
+    if injury_date_match:
+        result["event_date"] = injury_date_match.group(1)
+
+    if plan_text:
         lines = [l.strip() for l in plan_text.split('\n') if l.strip()]
+        # Filter out lines that are just noise
+        lines = [l for l in lines if len(l) > 5 and not l.lower().startswith('yours')]
 
         for line in lines:
-            ll = line.lower()
+            # Clean up line - remove bullet points
+            clean_line = re.sub(r'^[-•]\s*', '', line).strip()
+            if not clean_line or len(clean_line) < 5:
+                continue
 
-            # ALL plan items should be in diary events / follow-up
+            ll = clean_line.lower()
+
             # Determine responsible party and due date based on content
             responsible = "GP"
             due_date = "As specified"
 
             if any(x in ll for x in ['week', 'month', 'day']):
-                # Extract time reference
-                import re as _re
-                time_match = _re.search(r'(\d+)\s*(week|month|day)s?', ll)
+                time_match = re.search(r'(\d+)\s*(week|month|day)s?', ll)
                 if time_match:
                     due_date = f"{time_match.group(1)} {time_match.group(2)}s"
 
@@ -1267,21 +1300,21 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
 
             # Add ALL items to diary events
             result["diary_events"].append({
-                "event": line,
+                "event": clean_line,
                 "due_date": due_date,
                 "responsible_party": responsible
             })
 
-            # Categorize for GP actions
-            if any(x in ll for x in ['repeat blood', 'advised', 'arrange', 'refer', 'prescribe', 'review', 'bloods']):
-                result["actions_gp_doctor"].append(line)
+            # Categorize for GP actions - expanded patterns for clinic letters
+            if any(x in ll for x in ['refer', 'ct', 'mri', 'x-ray', 'xray', 'scan', 'review', 'physiotherapy', 'physio']):
+                result["actions_gp_doctor"].append(clean_line)
+            elif any(x in ll for x in ['repeat blood', 'advised', 'arrange', 'prescribe', 'bloods']):
+                result["actions_gp_doctor"].append(clean_line)
             elif 'blood form' in ll or 'form given' in ll:
-                # Blood form given - Reception should note this
-                result["actions_gp_reception"].append(line)
+                result["actions_gp_reception"].append(clean_line)
             elif 'removed' in ll or 'cannula' in ll:
-                # Procedure completed - note for records
                 if not result["conclusion"]:
-                    result["conclusion"] = line
+                    result["conclusion"] = clean_line
 
     # Extract dates from Admission Details section
     admission_match = re.search(r'Admission Details.*?Date[:\s]*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', text, re.IGNORECASE | re.DOTALL)
@@ -1293,16 +1326,27 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
     if discharge_match:
         result["letter_date"] = discharge_match.group(1)
 
-    # Extract header date (e.g., "27 APR 2026")
-    header_date = re.search(r'(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{4})', text[:500], re.IGNORECASE)
-    if header_date and not result["letter_date"]:
-        months = {'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06',
-                  'JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12'}
-        d, m, y = header_date.groups()
-        result["letter_date"] = f"{d.zfill(2)}/{months[m.upper()]}/{y}"
+    # Extract header date (e.g., "27 APR 2026" or "30th March 2026")
+    months_abbr = {'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06',
+                   'JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12'}
+    months_full = {'JANUARY':'01','FEBRUARY':'02','MARCH':'03','APRIL':'04','MAY':'05','JUNE':'06',
+                   'JULY':'07','AUGUST':'08','SEPTEMBER':'09','OCTOBER':'10','NOVEMBER':'11','DECEMBER':'12'}
+
+    if not result["letter_date"]:
+        # Try "30th March 2026" format
+        header_date_full = re.search(r'(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})', text[:1000], re.IGNORECASE)
+        if header_date_full:
+            d, m, y = header_date_full.groups()
+            result["letter_date"] = f"{d.zfill(2)}/{months_full[m.upper()]}/{y}"
+        else:
+            # Try "27 APR 2026" format
+            header_date = re.search(r'(\d{1,2})\s*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{4})', text[:500], re.IGNORECASE)
+            if header_date:
+                d, m, y = header_date.groups()
+                result["letter_date"] = f"{d.zfill(2)}/{months_abbr[m.upper()]}/{y}"
 
     import sys
-    print(f"[DEBUG] Fallback extraction: diary_events={len(result['diary_events'])}, gp_actions={len(result['actions_gp_doctor'])}", file=sys.stderr)
+    print(f"[DEBUG] Fallback extraction: diary_events={len(result['diary_events'])}, gp_actions={len(result['actions_gp_doctor'])}, diagnoses={len(result['diagnoses'])}", file=sys.stderr)
 
     return result
 
@@ -1431,6 +1475,12 @@ def infer_letter_type(text: str) -> str:
     if any(x in t for x in ["gestational diabetes", "antenatal", "maternity", "glucose tolerance",
                               "pip code", "blood glucose monitoring", "midwives"]):
         return "Maternity / Diabetes Letter"
+    # Orthopaedic / Fracture Clinic Letter
+    if any(x in t for x in ["fracture clinic", "orthopaedic", "orthopedic", "clavicle", "clavicular",
+                              "fracture", "x-ray done", "collar and cuff", "physiotherapy referral",
+                              "midshaft", "ct scan", "bone", "callus"]):
+        if any(x in t for x in ["department of orthopaedics", "fracture clinic", "clinic letter"]):
+            return "Orthopaedic Clinic Letter"
     # Pre-op surgical outpatient
     if any(x in t for x in ["hernia", "supra-umbilical", "upper gi", "open repair", "mesh repair",
                               "brachioplasty", "pre-op", "pre op", "surgical consent"]):
