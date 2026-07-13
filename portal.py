@@ -1047,6 +1047,128 @@ def get_confidence_threshold(letter_type: str) -> float:
     return _get_threshold(letter_type)
 
 
+def run_comprehensive_extraction(text: str, letter_type: str = "") -> dict:
+    """
+    Comprehensive clinical document extraction using Claude Sonnet 5.
+    Extracts ALL required fields in a single structured call for maximum accuracy.
+
+    Returns dict with:
+    - event_date: Date of clinical event/procedure
+    - letter_date: Date letter was written/sent
+    - problems: List of current problems/issues with SNOMED codes
+    - treatments: List of treatments with SNOMED codes
+    - medications: List of medications with SNOMED codes
+    - investigations: List of investigations/tests with SNOMED codes
+    - diagnoses: List of diagnoses with SNOMED codes
+    - conclusion: Clinical conclusion
+    - recommendation: Recommendations for GP/patient
+    - diary_events: Scheduled follow-ups, tests, reviews
+    - actions_patient: Actions for patient to take
+    - actions_patient_booking: Appointments patient needs to book
+    - is_historical: Fields marked as historical (to be excluded)
+    """
+    client = make_client("bedrock-runtime")
+    MODEL = "arn:aws:bedrock:eu-west-2:654654155641:inference-profile/eu.anthropic.claude-sonnet-5"
+
+    extraction_prompt = f"""You are an expert NHS clinical document analyst. Extract ALL the following information from this clinical document.
+
+CRITICAL RULES:
+1. Extract ONLY information from the CURRENT encounter/letter - NOT historical information
+2. Historical info includes: "previously had", "history of", "past medical history", "in 2020", etc.
+3. For SNOMED codes: provide the most specific SNOMED CT code you know for each clinical term
+4. If a field has no relevant current information, use empty array []
+5. Dates should be in DD/MM/YYYY format
+
+Document Type: {letter_type}
+
+DOCUMENT TEXT:
+{text[:6000]}
+
+Return a JSON object with this EXACT structure (no markdown, no explanation):
+{{
+  "event_date": "DD/MM/YYYY or empty string if not found",
+  "letter_date": "DD/MM/YYYY or empty string if not found",
+  "problems": [
+    {{"term": "clinical term", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+  ],
+  "treatments": [
+    {{"term": "treatment name", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+  ],
+  "medications": [
+    {{"term": "drug name", "dose": "dose if mentioned", "frequency": "frequency if mentioned", "snomed_code": "code", "is_historical": false}}
+  ],
+  "investigations": [
+    {{"term": "test/scan name", "result": "result if mentioned", "snomed_code": "code", "is_historical": false}}
+  ],
+  "diagnoses": [
+    {{"term": "diagnosis", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+  ],
+  "conclusion": "Brief clinical conclusion from the letter",
+  "recommendation": "Recommendations stated in the letter",
+  "diary_events": [
+    {{"event": "what needs to happen", "due_date": "when", "responsible_party": "who"}}
+  ],
+  "actions_patient": [
+    "Specific action patient must take (e.g., fasting, medication timing)"
+  ],
+  "actions_patient_booking": [
+    "Appointments patient needs to book (e.g., blood test, GP review)"
+  ]
+}}
+
+Output ONLY the JSON object, nothing else."""
+
+    try:
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2000,
+            "messages": [{"role": "user", "content": extraction_prompt}]
+        })
+        resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
+        raw = json.loads(resp["body"].read())["content"][0]["text"].strip()
+
+        # Clean and parse JSON
+        import re as _re
+        _raw_clean = _re.sub(r'```(?:json)?\s*', '', raw).strip()
+        _raw_clean = _re.sub(r'```\s*$', '', _raw_clean).strip()
+
+        # Find JSON object
+        _start = _raw_clean.find('{')
+        _end = _raw_clean.rfind('}')
+        if _start != -1 and _end != -1:
+            _json_str = _raw_clean[_start:_end + 1]
+            result = json.loads(_json_str)
+
+            # Filter out historical items
+            for field in ['problems', 'treatments', 'medications', 'investigations', 'diagnoses']:
+                if field in result and isinstance(result[field], list):
+                    result[field] = [item for item in result[field]
+                                    if not item.get('is_historical', False)]
+
+            return result
+        else:
+            raise ValueError("No JSON object found in response")
+
+    except Exception as e:
+        import sys
+        print(f"[WARN] Comprehensive extraction failed: {e}", file=sys.stderr)
+        return {
+            "event_date": "",
+            "letter_date": "",
+            "problems": [],
+            "treatments": [],
+            "medications": [],
+            "investigations": [],
+            "diagnoses": [],
+            "conclusion": "",
+            "recommendation": "",
+            "diary_events": [],
+            "actions_patient": [],
+            "actions_patient_booking": [],
+            "extraction_error": str(e)
+        }
+
+
 def extract_hospital_trust(text: str) -> str:
     """OBS-008: Identify the originating hospital trust from document header text.
     Enables routing, audit logging, and trust-specific formatting rules.
@@ -2034,6 +2156,18 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     # ── Document type classification (needed before Track B for type-specific prompts) ──
     letter_type   = infer_letter_type(doc_text)
 
+    # ── Comprehensive Extraction (Claude Sonnet 5) ──────────────────────────────
+    # Extract all structured fields in one call for maximum accuracy
+    try:
+        comprehensive = run_comprehensive_extraction(doc_text, letter_type)
+        result["pipeline_stages"]["extraction"] = {
+            "status": "done",
+            "fields_extracted": len([k for k, v in comprehensive.items() if v]),
+        }
+    except Exception as e:
+        comprehensive = {}
+        result["pipeline_stages"]["extraction"] = {"status": "error", "error": str(e)}
+
     # ── Track B: Summarization ─────────────────────────────────────────────────
     try:
         summaries = run_bedrock_summarization(doc_text, snomed, letter_type, patient_info.get("sex", ""))
@@ -2126,11 +2260,38 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         "used_doctype_fallback":  snomed.get("used_doctype_fallback", False),
     }
     result["summaries"]           = summaries
-    result["actions_structured"]  = summaries.get("actions_structured", {
+
+    # ── Merge comprehensive extraction into actions_structured ──────────────────
+    base_actions = summaries.get("actions_structured", {
         "sender_actions":    {"doctor": [], "pharmacist": [], "reception": []},
         "gp_surgery_actions":{"doctor": [], "pharmacist": [], "reception": []},
     })
+    # Add patient-specific action categories from comprehensive extraction
+    base_actions["patient_actions"] = comprehensive.get("actions_patient", [])
+    base_actions["patient_booking"] = comprehensive.get("actions_patient_booking", [])
+    result["actions_structured"]  = base_actions
+
     result["follow_up_actions"]   = summaries.get("follow_up_actions", "")
+
+    # ── Comprehensive extraction results ────────────────────────────────────────
+    result["event_date"]          = comprehensive.get("event_date", "")
+    result["letter_date"]         = comprehensive.get("letter_date", "")
+    result["conclusion"]          = comprehensive.get("conclusion", "")
+    result["recommendation"]      = comprehensive.get("recommendation", "")
+    result["diary_events"]        = comprehensive.get("diary_events", [])
+
+    # ── Enhanced SNOMED with treatments/investigations from comprehensive extraction ──
+    result["treatments"]          = comprehensive.get("treatments", [])
+    result["investigations"]      = comprehensive.get("investigations", [])
+
+    # Merge comprehensive diagnoses/problems if richer than Comprehend Medical results
+    if comprehensive.get("diagnoses") and len(comprehensive["diagnoses"]) > len(snomed.get("diagnoses", [])):
+        result["snomed"]["diagnoses_enhanced"] = comprehensive["diagnoses"]
+    if comprehensive.get("problems") and len(comprehensive["problems"]) > len(snomed.get("problems", [])):
+        result["snomed"]["problems_enhanced"] = comprehensive["problems"]
+    if comprehensive.get("medications"):
+        result["snomed"]["medications_enhanced"] = comprehensive["medications"]
+
     # HIPAA audit trail (SRS §5.2, §6.2): surface PHI count for compliance logging
     result["phi_entity_count"]   = len(phi_entities)
 
@@ -2534,6 +2695,16 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
           <div class="field-group" style="margin-top:16px">
             <div class="field-label">Conclusion</div>
             <textarea class="field-input" id="field-conclusion" rows="3" placeholder="None" style="resize:vertical"></textarea>
+          </div>
+
+          <div class="field-group" style="margin-top:16px">
+            <div class="field-label">Recommendation</div>
+            <textarea class="field-input" id="field-recommendation" rows="3" placeholder="None" style="resize:vertical"></textarea>
+          </div>
+
+          <div class="field-group" style="margin-top:16px">
+            <div class="field-label">Diary Events (Follow-up Schedule)</div>
+            <div id="diary-events-list" style="font-size:13px;color:#334155"></div>
           </div>
         </div>
 
@@ -2973,14 +3144,24 @@ function renderResult(data, file) {
   const s = data.structured || {};
   if (s.consultant)        setVal('field-consultant', s.consultant);
   if (s.department)        setVal('field-dept', s.department);
-  // Always reset the per-document event date so a previous document's value
-  // never leaks into the active-problem "Started on" field.
-  window._docEventDate = s.admission_date || '';
-  if (s.admission_date) setVal('field-event-date', s.admission_date);
-  if (s.discharge_date || s.appointment_date) setVal('field-letter-date', s.discharge_date || s.appointment_date);
+
+  // Event Date / Letter Date — prefer comprehensive extraction, fall back to structured
+  const eventDate = data.event_date || s.admission_date || '';
+  const letterDate = data.letter_date || s.discharge_date || s.appointment_date || '';
+  window._docEventDate = eventDate;
+  if (eventDate)  setVal('field-event-date', eventDate);
+  if (letterDate) setVal('field-letter-date', letterDate);
+
   if (s.admission_method)  setVal('field-sender', s.admission_method);
-  if (s.diagnosis_text)    setVal('field-conclusion', s.diagnosis_text);
-  if (s.indication || s.impression) setVal('field-conclusion', s.indication || s.impression);
+
+  // Conclusion — prefer comprehensive extraction
+  const conclusion = data.conclusion || s.diagnosis_text || s.indication || s.impression || '';
+  if (conclusion) setVal('field-conclusion', conclusion);
+
+  // Recommendation — new field from comprehensive extraction
+  const recommendation = data.recommendation || '';
+  const recEl = document.getElementById('field-recommendation');
+  if (recEl && recommendation) recEl.value = recommendation;
 
   // Coding tab — hidden chip sinks (kept for any future hooks)
   renderChips('chips-problems',   (data.snomed||{}).problems   || []);
@@ -3005,6 +3186,11 @@ function renderResult(data, file) {
   const icdFallback  = data.icd_codes       || [];
   const medsFallback = data.medications_raw || [];
   renderSnomedTable(snomedProbs, snomedMeds, snomedDx, icdFallback, medsFallback, trackAError, usedFallback, top3Fallback, usedSummaryFallback, usedDoctypeFallback);
+
+  // ── Render enhanced extractions (treatments, investigations, diary events) ──
+  renderTreatmentsInvestigations(data.treatments || [], data.investigations || []);
+  renderDiaryEvents(data.diary_events || []);
+  renderPatientActions(data.actions_structured || {});
   // Header confidence badge
   const snomedConf = trackA.confidence != null ? trackA.confidence : null;
   const snomedBadge = document.getElementById('snomed-conf-badge');
@@ -3883,6 +4069,184 @@ function resetUpload() {
   document.getElementById('topbar-title').textContent = 'Document Extraction Portal';
   showPanel('upload');
   document.getElementById('file-input').value = '';
+}
+
+// ── Render Treatments and Investigations (Comprehensive Extraction) ──────────
+function renderTreatmentsInvestigations(treatments, investigations) {
+  // Add to SNOMED table or create separate sections
+  const tbody = document.getElementById('snomed-table-body');
+  if (!tbody) return;
+
+  // Add treatments
+  treatments.forEach(t => {
+    const tr = document.createElement('tr');
+    tr.style.background = '#f0fff4'; // Light green for treatments
+
+    const tdCat = document.createElement('td');
+    tdCat.style.cssText = 'padding:7px 10px;vertical-align:middle';
+    const badge = document.createElement('span');
+    badge.style.cssText = 'display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#047857;background:#d1fae5;border:1px solid #04785730';
+    badge.textContent = 'TREATMENT';
+    tdCat.appendChild(badge);
+
+    const tdTerm = document.createElement('td');
+    tdTerm.style.cssText = 'padding:7px 10px;font-weight:600;color:#222;vertical-align:middle';
+    tdTerm.textContent = t.term || '—';
+
+    const tdCode = document.createElement('td');
+    tdCode.style.cssText = 'padding:7px 10px;vertical-align:middle';
+    if (t.snomed_code) {
+      const codeEl = document.createElement('code');
+      codeEl.style.cssText = 'background:#d1fae5;color:#047857;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;font-family:monospace';
+      codeEl.textContent = t.snomed_code;
+      tdCode.appendChild(codeEl);
+    }
+
+    const tdDesc = document.createElement('td');
+    tdDesc.style.cssText = 'padding:7px 10px;color:#555;font-size:11px;vertical-align:middle';
+    tdDesc.textContent = t.snomed_description || '';
+
+    const tdConf = document.createElement('td');
+    tdConf.style.cssText = 'padding:7px 10px;text-align:center;vertical-align:middle';
+    tdConf.innerHTML = '<span style="font-size:9px;color:#047857">Claude</span>';
+
+    tr.appendChild(tdCat);
+    tr.appendChild(tdTerm);
+    tr.appendChild(tdCode);
+    tr.appendChild(tdDesc);
+    tr.appendChild(tdConf);
+    tbody.appendChild(tr);
+  });
+
+  // Add investigations
+  investigations.forEach(inv => {
+    const tr = document.createElement('tr');
+    tr.style.background = '#eff6ff'; // Light blue for investigations
+
+    const tdCat = document.createElement('td');
+    tdCat.style.cssText = 'padding:7px 10px;vertical-align:middle';
+    const badge = document.createElement('span');
+    badge.style.cssText = 'display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #1d4ed830';
+    badge.textContent = 'INVESTIGATION';
+    tdCat.appendChild(badge);
+
+    const tdTerm = document.createElement('td');
+    tdTerm.style.cssText = 'padding:7px 10px;font-weight:600;color:#222;vertical-align:middle';
+    tdTerm.textContent = inv.term + (inv.result ? ' → ' + inv.result : '');
+
+    const tdCode = document.createElement('td');
+    tdCode.style.cssText = 'padding:7px 10px;vertical-align:middle';
+    if (inv.snomed_code) {
+      const codeEl = document.createElement('code');
+      codeEl.style.cssText = 'background:#dbeafe;color:#1d4ed8;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;font-family:monospace';
+      codeEl.textContent = inv.snomed_code;
+      tdCode.appendChild(codeEl);
+    }
+
+    const tdDesc = document.createElement('td');
+    tdDesc.style.cssText = 'padding:7px 10px;color:#555;font-size:11px;vertical-align:middle';
+    tdDesc.textContent = '';
+
+    const tdConf = document.createElement('td');
+    tdConf.style.cssText = 'padding:7px 10px;text-align:center;vertical-align:middle';
+    tdConf.innerHTML = '<span style="font-size:9px;color:#1d4ed8">Claude</span>';
+
+    tr.appendChild(tdCat);
+    tr.appendChild(tdTerm);
+    tr.appendChild(tdCode);
+    tr.appendChild(tdDesc);
+    tr.appendChild(tdConf);
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Render Diary Events ───────────────────────────────────────────────────────
+function renderDiaryEvents(events) {
+  const el = document.getElementById('diary-events-list');
+  if (!el) return;
+  el.innerHTML = '';
+
+  if (!events || !events.length) {
+    el.innerHTML = '<span style="color:#94a3b8;font-style:italic">No scheduled follow-ups identified</span>';
+    return;
+  }
+
+  events.forEach((ev, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 12px;margin-bottom:6px;background:#f0f9ff;border-left:3px solid #0ea5e9;border-radius:4px';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:600;color:#0c4a6e;margin-bottom:4px';
+    title.textContent = ev.event || 'Follow-up';
+
+    const details = document.createElement('div');
+    details.style.cssText = 'font-size:12px;color:#64748b';
+    const parts = [];
+    if (ev.due_date) parts.push('📅 ' + ev.due_date);
+    if (ev.responsible_party) parts.push('👤 ' + ev.responsible_party);
+    details.textContent = parts.join(' • ') || 'No date specified';
+
+    div.appendChild(title);
+    div.appendChild(details);
+    el.appendChild(div);
+  });
+}
+
+// ── Render Patient Actions ────────────────────────────────────────────────────
+function renderPatientActions(actions) {
+  const patientActions = actions.patient_actions || [];
+  const patientBooking = actions.patient_booking || [];
+
+  // Find or create patient actions container in Follow-up tab
+  let patientBlock = document.getElementById('patient-actions-block');
+  if (!patientBlock) {
+    // Create it dynamically in the Follow-up tab
+    const followupContent = document.querySelector('#pane-followup > div');
+    if (followupContent) {
+      const block = document.createElement('div');
+      block.innerHTML = `
+        <div class="task-block-h" style="margin-top:16px;background:#fef3c7"><span style="color:#92400e">🏃 Patient Actions</span></div>
+        <div style="font-size:11px;color:#666;margin:0 0 8px 0;padding:0 4px">Actions the patient must take</div>
+        <div id="patient-actions-list" class="role-action-list"></div>
+        <div class="task-block-h" style="margin-top:12px;background:#fce7f3"><span style="color:#9d174d">📅 Patient Booking Required</span></div>
+        <div style="font-size:11px;color:#666;margin:0 0 8px 0;padding:0 4px">Appointments patient needs to arrange</div>
+        <div id="patient-booking-list" class="role-action-list"></div>
+      `;
+      followupContent.appendChild(block);
+    }
+  }
+
+  // Populate patient actions
+  const actionsList = document.getElementById('patient-actions-list');
+  if (actionsList) {
+    actionsList.innerHTML = '';
+    if (patientActions.length) {
+      patientActions.forEach(a => {
+        const item = document.createElement('div');
+        item.className = 'role-action-item';
+        item.innerHTML = `<span class="action-num" style="background:#f59e0b">!</span><span class="action-text">${a}</span>`;
+        actionsList.appendChild(item);
+      });
+    } else {
+      actionsList.innerHTML = '<div class="muted-empty" style="font-size:12px">No patient actions identified</div>';
+    }
+  }
+
+  // Populate patient booking
+  const bookingList = document.getElementById('patient-booking-list');
+  if (bookingList) {
+    bookingList.innerHTML = '';
+    if (patientBooking.length) {
+      patientBooking.forEach(b => {
+        const item = document.createElement('div');
+        item.className = 'role-action-item';
+        item.innerHTML = `<span class="action-num" style="background:#ec4899">📅</span><span class="action-text">${b}</span>`;
+        bookingList.appendChild(item);
+      });
+    } else {
+      bookingList.innerHTML = '<div class="muted-empty" style="font-size:12px">No booking requirements identified</div>';
+    }
+  }
 }
 </script>
 </body>
