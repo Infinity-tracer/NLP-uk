@@ -1079,6 +1079,8 @@ CRITICAL RULES:
 4. If a field has no relevant current information, use empty array []
 5. Dates should be in DD/MM/YYYY format
 6. READ THE "Plan and Requested Actions" SECTION CAREFULLY - this contains critical GP actions
+7. For event_date: Look for "Admission Details" section with "Date:" or "Admission date"
+8. For letter_date: Look for date in document header (e.g., "27 APR 2026") or "Discharge" section "Date:"
 
 Document Type: {letter_type}
 
@@ -1087,8 +1089,8 @@ DOCUMENT TEXT:
 
 Return a JSON object with this EXACT structure (no markdown, no explanation):
 {{
-  "event_date": "DD/MM/YYYY - the date of the clinical event/procedure/admission",
-  "letter_date": "DD/MM/YYYY - the date the letter was written/sent",
+  "event_date": "DD/MM/YYYY - LOOK FOR: Admission Details Date, or earliest clinical event date (e.g., 23/04/2026)",
+  "letter_date": "DD/MM/YYYY - LOOK FOR: Document header date (e.g., 27 APR 2026 = 27/04/2026) or Discharge Date",
   "problems": [
     {{"term": "clinical term", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
@@ -1453,14 +1455,54 @@ def extract_structured_fields(text: str) -> dict:
         "procedure": "", "indication": "", "impression": "",
     }
     lines = text.split("\n")
+
+    # First pass: look for Admission Details section with "Date:" format
+    in_admission_section = False
+    in_discharge_section = False
     for i, line in enumerate(lines):
         l = line.strip()
         ll = l.lower()
-        # Dates
-        if re.search(r'(?i)admission date', ll):
+
+        # Track sections
+        if "admission details" in ll:
+            in_admission_section = True
+            in_discharge_section = False
+        elif "dischar" in ll and ("date:" in ll or "by:" in ll or "destination" in ll):
+            in_discharge_section = True
+            in_admission_section = False
+
+        # Extract dates from "Date: DD/MM/YYYY" format (common in discharge summaries)
+        if "date:" in ll and not fields["admission_date"] and in_admission_section:
+            m = re.search(r'(\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})', l)
+            if m:
+                fields["admission_date"] = m.group(1)
+        if "date:" in ll and not fields["discharge_date"] and in_discharge_section:
+            m = re.search(r'(\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})', l)
+            if m:
+                fields["discharge_date"] = m.group(1)
+
+        # Lead Consultant Speciality
+        if "lead consultant special" in ll or "consultant special" in ll:
+            m = re.search(r'(?:speciality|specialty)[:\s]+([A-Za-z][^\n]{2,40})', l, re.IGNORECASE)
+            if m and not fields["department"]:
+                fields["department"] = m.group(1).strip()
+
+        # Consultant name - various formats
+        if ("consultant" in ll and (":" in l or "," in l)) or "discharging consultant" in ll:
+            # Format: "Consultant: Name, Role" or "Consultant , Name"
+            m = re.search(r'consultant[,:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', l, re.IGNORECASE)
+            if m and not fields["consultant"]:
+                fields["consultant"] = m.group(1).strip()
+
+    # Second pass: standard field extraction
+    for i, line in enumerate(lines):
+        l = line.strip()
+        ll = l.lower()
+        # Dates - standard format
+        if re.search(r'(?i)admission date', ll) and not fields["admission_date"]:
             m = re.search(r'(\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})', l)
             if m: fields["admission_date"] = m.group(1)
-        if re.search(r'(?i)discharge date', ll):
+        if re.search(r'(?i)discharge date', ll) and not fields["discharge_date"]:
             m = re.search(r'(\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4})', l)
             if m: fields["discharge_date"] = m.group(1)
         if re.search(r'(?i)appointment.?date', ll):
@@ -2316,11 +2358,16 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     result["follow_up_actions"]   = summaries.get("follow_up_actions", "")
 
     # ── Comprehensive extraction results ────────────────────────────────────────
-    result["event_date"]          = comprehensive.get("event_date", "")
-    result["letter_date"]         = comprehensive.get("letter_date", "")
+    # Fallback to structured fields if comprehensive extraction returned empty
+    result["event_date"]          = comprehensive.get("event_date", "") or struct_fields.get("admission_date", "")
+    result["letter_date"]         = comprehensive.get("letter_date", "") or struct_fields.get("discharge_date", "") or struct_fields.get("appointment_date", "")
     result["conclusion"]          = comprehensive.get("conclusion", "")
     result["recommendation"]      = comprehensive.get("recommendation", "")
     result["diary_events"]        = comprehensive.get("diary_events", [])
+
+    # Debug logging for comprehensive extraction
+    import sys
+    print(f"[DEBUG] Comprehensive extraction: event_date={result['event_date']}, letter_date={result['letter_date']}, diary_events={len(result['diary_events'])}", file=sys.stderr)
 
     # ── Enhanced SNOMED with treatments/investigations from comprehensive extraction ──
     result["treatments"]          = comprehensive.get("treatments", [])
