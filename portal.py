@@ -1147,17 +1147,34 @@ Output ONLY the JSON object, nothing else."""
         else:
             raw = str(resp_body).strip()
 
+        # Debug: log raw response
+        import sys
+        print(f"[DEBUG] Comprehensive extraction raw (first 500): {raw[:500]}", file=sys.stderr)
+
         # Clean and parse JSON
         import re as _re
         _raw_clean = _re.sub(r'```(?:json)?\s*', '', raw).strip()
         _raw_clean = _re.sub(r'```\s*$', '', _raw_clean).strip()
 
-        # Find JSON object
+        # Find JSON object - try multiple approaches
         _start = _raw_clean.find('{')
         _end = _raw_clean.rfind('}')
-        if _start != -1 and _end != -1:
+
+        if _start == -1 or _end == -1 or _start >= _end:
+            # Try to find JSON in the original raw response
+            _start = raw.find('{')
+            _end = raw.rfind('}')
+            if _start != -1 and _end != -1 and _start < _end:
+                _raw_clean = raw
+
+        if _start != -1 and _end != -1 and _start < _end:
             _json_str = _raw_clean[_start:_end + 1]
-            result = json.loads(_json_str)
+            try:
+                result = json.loads(_json_str)
+            except json.JSONDecodeError as je:
+                print(f"[DEBUG] JSON parse error at pos {je.pos}: {je.msg}", file=sys.stderr)
+                print(f"[DEBUG] JSON string (first 300): {_json_str[:300]}", file=sys.stderr)
+                raise ValueError(f"Invalid JSON: {je.msg}")
 
             # Filter out historical items
             for field in ['problems', 'treatments', 'medications', 'investigations', 'diagnoses']:
@@ -1167,6 +1184,7 @@ Output ONLY the JSON object, nothing else."""
 
             return result
         else:
+            print(f"[DEBUG] No JSON found. Raw response: {raw[:300]}", file=sys.stderr)
             raise ValueError("No JSON object found in response")
 
     except Exception as e:
