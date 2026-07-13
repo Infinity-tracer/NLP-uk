@@ -72,8 +72,49 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
                         (senderActions.pharmacist?.length || 0) +
                         (senderActions.reception?.length || 0) > 0;
 
+  const diaryEvents = result.diary_events || [];
+  const recommendation = result.recommendation || '';
+
   return (
     <div className="space-y-4">
+      {/* Recommendation section */}
+      {recommendation && (
+        <div className="border border-blue-200 rounded-lg overflow-hidden bg-blue-50">
+          <div className="px-3 py-2 text-xs font-bold text-blue-700 bg-blue-100 border-b border-blue-200">
+            📋 Recommendation
+          </div>
+          <div className="p-3 text-sm text-gray-700">
+            {recommendation}
+          </div>
+        </div>
+      )}
+
+      {/* Diary Events / Follow-up Schedule */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border-b border-gray-200">
+          📅 Diary Events / Follow-up Schedule
+        </div>
+        <div className="p-3">
+          {diaryEvents.length > 0 ? (
+            <div className="space-y-2">
+              {diaryEvents.map((event, i) => (
+                <div key={i} className="border border-orange-200 border-l-4 border-l-orange-500 rounded-lg p-3 bg-gradient-to-r from-orange-50 to-white">
+                  <p className="text-sm font-medium text-gray-800">{event.event}</p>
+                  <div className="flex gap-4 mt-1 text-xs text-gray-500">
+                    {event.due_date && <span>📆 {event.due_date}</span>}
+                    {event.responsible_party && <span>👤 {event.responsible_party}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-400 italic">
+              No scheduled follow-up events found.
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* To-do section */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <div className="flex justify-between items-center px-3 py-2 text-xs font-bold text-gray-600 bg-gray-50 border-b border-gray-200">

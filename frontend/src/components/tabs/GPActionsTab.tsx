@@ -69,9 +69,15 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
     reception: [],
   };
 
+  // Patient actions from comprehensive extraction
+  const patientActions = result.actions_structured?.patient_actions || [];
+  const patientBooking = result.actions_structured?.patient_booking || [];
+
   const hasAnyActions = (gpActions.doctor?.length || 0) +
                         (gpActions.pharmacist?.length || 0) +
                         (gpActions.reception?.length || 0) > 0;
+
+  const hasPatientActions = patientActions.length > 0 || patientBooking.length > 0;
 
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href.split('#')[0]);
@@ -103,6 +109,37 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
           )}
         </div>
       </div>
+
+      {/* Patient Actions */}
+      {hasPatientActions && (
+        <div className="border border-green-200 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 text-xs font-bold text-green-700 bg-green-50 border-b border-green-200">
+            🧑 Patient Actions
+          </div>
+          <div className="p-3 space-y-2">
+            {patientActions.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-1">Actions for Patient:</div>
+                {patientActions.map((action, i) => (
+                  <div key={i} className="border border-green-200 border-l-4 border-l-green-500 rounded-lg p-3 mb-2 bg-gradient-to-r from-green-50 to-white">
+                    <p className="text-sm text-gray-700">{action}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {patientBooking.length > 0 && (
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-1">Appointments to Book:</div>
+                {patientBooking.map((action, i) => (
+                  <div key={i} className="border border-teal-200 border-l-4 border-l-teal-500 rounded-lg p-3 mb-2 bg-gradient-to-r from-teal-50 to-white">
+                    <p className="text-sm text-gray-700">{action}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Contact section */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">

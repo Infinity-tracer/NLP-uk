@@ -71,6 +71,8 @@ export interface RoleActions {
 export interface ActionsStructured {
   sender_actions: RoleActions;
   gp_surgery_actions: RoleActions;
+  patient_actions?: string[];
+  patient_booking?: string[];
 }
 
 export interface Summaries {
@@ -107,6 +109,24 @@ export interface ClinicalSpecifics {
   [key: string]: string | number | Record<string, string | number>;
 }
 
+export interface DiaryEvent {
+  event: string;
+  due_date: string;
+  responsible_party: string;
+}
+
+export interface TreatmentItem {
+  term: string;
+  snomed_code?: string;
+  snomed_description?: string;
+}
+
+export interface InvestigationItem {
+  term: string;
+  result?: string;
+  snomed_code?: string;
+}
+
 export interface ProcessResult {
   doc_id: string;
   filename: string;
@@ -141,6 +161,15 @@ export interface ProcessResult {
   follow_up_actions: string;
 
   phi_entity_count: number;
+
+  // Comprehensive extraction fields (Claude Sonnet 5)
+  event_date?: string;
+  letter_date?: string;
+  conclusion?: string;
+  recommendation?: string;
+  diary_events?: DiaryEvent[];
+  treatments?: TreatmentItem[];
+  investigations?: InvestigationItem[];
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';

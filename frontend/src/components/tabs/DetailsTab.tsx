@@ -35,12 +35,14 @@ export default function DetailsTab({ result }: DetailsTabProps) {
   const predictedBucket = mapLetterTypeToBucket(result.letter_type || '');
 
   const [selectedBucket, setSelectedBucket] = useState(predictedBucket);
-  const [eventDate, setEventDate] = useState(result.structured?.admission_date || '');
-  const [letterDate, setLetterDate] = useState(result.structured?.discharge_date || result.structured?.appointment_date || '');
-  const [sender, setSender] = useState(result.structured?.admission_method || '');
+  // Use comprehensive extraction fields (event_date, letter_date) first, fallback to structured fields
+  const [eventDate, setEventDate] = useState(result.event_date || result.structured?.admission_date || '');
+  const [letterDate, setLetterDate] = useState(result.letter_date || result.structured?.discharge_date || result.structured?.appointment_date || '');
+  const [sender, setSender] = useState(result.hospital_trust || result.structured?.admission_method || '');
   const [consultant, setConsultant] = useState(result.structured?.consultant || '');
   const [department, setDepartment] = useState(result.structured?.department || '');
-  const [conclusion, setConclusion] = useState(result.structured?.diagnosis_text || result.structured?.indication || result.structured?.impression || '');
+  // Use comprehensive extraction conclusion first, fallback to structured fields
+  const [conclusion, setConclusion] = useState(result.conclusion || result.structured?.diagnosis_text || result.structured?.indication || result.structured?.impression || '');
 
   const isOverride = selectedBucket !== predictedBucket;
 
