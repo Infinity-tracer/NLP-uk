@@ -1150,7 +1150,17 @@ Output ONLY the JSON object, nothing else."""
 
         # Handle different response formats (same as call_claude)
         if "content" in resp_body and resp_body["content"]:
-            raw = resp_body["content"][0].get("text", "").strip()
+            content_item = resp_body["content"][0]
+            print(f"[DEBUG] content[0] type: {type(content_item)}, keys: {list(content_item.keys()) if isinstance(content_item, dict) else 'N/A'}", file=sys.stderr)
+            print(f"[DEBUG] content[0] value: {str(content_item)[:300]}", file=sys.stderr)
+            # Try different keys for the text content
+            if isinstance(content_item, dict):
+                raw = content_item.get("text", "") or content_item.get("value", "") or content_item.get("content", "")
+            elif isinstance(content_item, str):
+                raw = content_item
+            else:
+                raw = str(content_item)
+            raw = raw.strip()
         elif "completion" in resp_body:
             raw = resp_body["completion"].strip()
         else:
