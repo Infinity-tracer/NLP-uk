@@ -604,16 +604,20 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
         return "medications"
 
     # Text-based classification for common patterns
-    # Investigations
+    # Investigations (diagnostic procedures and tests)
     if any(x in text_lower for x in ["ct ", "ct scan", "mri", "x-ray", "xray", "ultrasound",
                                       "blood test", "urine test", "ecg", "ekg", "angio",
                                       "colonoscopy", "endoscopy", "biopsy", "smear",
-                                      "mammogram", "pet scan", "bone scan"]):
+                                      "mammogram", "pet scan", "bone scan", "histology",
+                                      "tissue", "sigmoidoscopy", "gastroscopy", "cystoscopy",
+                                      "bronchoscopy", "laparoscopy", "arthroscopy"]):
         return "investigations"
 
-    # Treatments
+    # Treatments (therapeutic procedures)
     if any(x in text_lower for x in ["chemotherapy", "radiotherapy", "therapy", "treatment",
-                                      "surgery", "physiotherapy", "counseling", "rehabilitation"]):
+                                      "surgery", "physiotherapy", "counseling", "rehabilitation",
+                                      "injection", "excision", "removal", "repair", "banding",
+                                      "phenol", "sclerotherapy", "ablation", "resection"]):
         return "treatments"
 
     # Medications (common drug patterns)
@@ -1276,22 +1280,22 @@ DOCUMENT TEXT:
 
 Return a JSON object with this EXACT structure (no markdown, no explanation):
 {{
-  "event_date": "DD/MM/YYYY - LOOK FOR: Admission Details Date, or earliest clinical event date (e.g., 23/04/2026)",
+  "event_date": "DD/MM/YYYY - LOOK FOR: Admission Details Date, Procedure date, or earliest clinical event date",
   "letter_date": "DD/MM/YYYY - LOOK FOR: Document header date (e.g., 27 APR 2026 = 27/04/2026) or Discharge Date",
   "problems": [
-    {{"term": "clinical term", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+    {{"term": "clinical symptom/finding e.g. constipation, pain, bleeding", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
   "treatments": [
-    {{"term": "treatment name e.g. IV iron infusion, chemotherapy, physiotherapy", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+    {{"term": "procedure/treatment performed during this admission e.g. flexible sigmoidoscopy, phenol injection, excision of skin tags, IV iron infusion, chemotherapy", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
   "medications": [
     {{"term": "drug name", "dose": "dose if mentioned", "frequency": "frequency if mentioned", "snomed_code": "code", "is_historical": false}}
   ],
   "investigations": [
-    {{"term": "test/scan name", "result": "result if mentioned", "snomed_code": "code", "is_historical": false}}
+    {{"term": "test/scan/biopsy name e.g. histology, blood test, CT scan, MRI. Include PENDING tests from 'Investigations Pending at Discharge' section", "result": "result or 'pending' if awaiting results", "snomed_code": "code", "is_historical": false, "is_pending": true/false}}
   ],
   "diagnoses": [
-    {{"term": "diagnosis", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
+    {{"term": "diagnosis with ICD code if present e.g. Haemorrhoids [K64.9]", "snomed_code": "code", "snomed_description": "description", "is_historical": false}}
   ],
   "conclusion": "Brief clinical conclusion from the letter",
   "recommendation": "Recommendations stated in the letter",
@@ -1299,7 +1303,7 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
     {{"event": "what needs to happen", "due_date": "when (e.g., 4 weeks after transfusion, 3 months)", "responsible_party": "GP/Patient/Hospital"}}
   ],
   "actions_gp_doctor": [
-    "Actions requiring GP doctor - e.g., 'Arrange repeat bloods 4 weeks after transfusion', 'Review blood results', 'Refer to specialist'"
+    "Actions requiring GP doctor - e.g., 'Review pending histology results when available (urgent)', 'Arrange repeat bloods 4 weeks after transfusion', 'Refer to specialist'. IMPORTANT: Include any pending investigations/histology from 'Investigations Pending at Discharge' or 'Specimens' section"
   ],
   "actions_gp_pharmacist": [
     "Actions requiring GP pharmacist - e.g., 'Add medication to repeat', 'Review drug interactions'"
@@ -1531,6 +1535,68 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
             if header_date:
                 d, m, y = header_date.groups()
                 result["letter_date"] = f"{d.zfill(2)}/{months_abbr[m.upper()]}/{y}"
+
+    # ── Parse "Investigations Pending at Discharge" section ──────────────────
+    pending_investigations_match = re.search(
+        r'Investigations Pending at Discharge\s*(.*?)(?=\n(?:Unresulted Labs|Outpatient Follow|Actions Required|Allergies|$))',
+        text, re.IGNORECASE | re.DOTALL
+    )
+    if pending_investigations_match:
+        pending_text = pending_investigations_match.group(1).strip()
+        # Parse HISTOLOGY/lab test rows - look for "Source Type Tests" pattern or "HISTOLOGY" mentions
+        if 'histology' in pending_text.lower():
+            # Extract specimen descriptions
+            specimens = re.findall(r'Description:\s*([^\n]+)', pending_text, re.IGNORECASE)
+            priorities = re.findall(r'Priority[:\s]*(Urgent|Routine)', pending_text, re.IGNORECASE)
+
+            for i, specimen in enumerate(specimens):
+                priority = priorities[i] if i < len(priorities) else 'Routine'
+                action_text = f"Pending histology: {specimen.strip()} ({priority.lower()})"
+                result["actions_gp_doctor"].append(action_text)
+                result["investigations"].append({"term": f"Histology - {specimen.strip()}", "snomed_code": "117259009"})
+
+            # If no specific specimens found but HISTOLOGY mentioned
+            if not specimens:
+                result["actions_gp_doctor"].append("Pending histology results - review when available")
+                result["investigations"].append({"term": "Histology tissue examination", "snomed_code": "117259009"})
+
+    # ── Parse "Post-op Instructions" for patient actions ──────────────────
+    postop_match = re.search(
+        r'Post-op Instructions\s*(.*?)(?=\n(?:Actions Required|Investigations Pending|Specimens|$))',
+        text, re.IGNORECASE | re.DOTALL
+    )
+    if postop_match:
+        postop_text = postop_match.group(1).strip()
+        for line in postop_text.split('\n'):
+            line = line.strip()
+            if line and len(line) > 5:
+                result["actions_patient"].append(line)
+
+    # ── Parse procedures from Procedure Information section ──────────────
+    procedure_match = re.search(
+        r'Procedure Information\s*.*?Procedure\(s\)[^:]*:\s*\n?(.*?)(?=\n\s*\n|In partnership|$)',
+        text, re.IGNORECASE | re.DOTALL
+    )
+    if procedure_match:
+        proc_text = procedure_match.group(1).strip()
+        # Also check body text for procedure descriptions
+        body_procs = re.search(r'(flexible sigmoidoscopy|phenol injection|excision[^\n]*|banding[^\n]*)',
+                               text, re.IGNORECASE)
+        if body_procs:
+            for proc in re.findall(r'(flexible sigmoidoscopy|phenol injection[^,.\n]*|excision of[^,.\n]*|banding[^,.\n]*)',
+                                   text, re.IGNORECASE):
+                result["treatments"].append({"term": proc.strip()})
+
+    # ── Parse telephone/follow-up appointments from Post-op section ──────────
+    telephone_match = re.search(r'(Telephone appointment[^\n]*)', text, re.IGNORECASE)
+    if telephone_match:
+        appt_text = telephone_match.group(1).strip()
+        result["diary_events"].append({
+            "event": appt_text,
+            "due_date": "6 weeks" if "6 week" in appt_text.lower() else "As specified",
+            "responsible_party": "Hospital"
+        })
+        result["actions_gp_reception"].append(f"Note: {appt_text}")
 
     import sys
     print(f"[DEBUG] Fallback extraction: diary_events={len(result['diary_events'])}, gp_actions={len(result['actions_gp_doctor'])}, diagnoses={len(result['diagnoses'])}", file=sys.stderr)
@@ -2688,9 +2754,12 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     result["medications_raw"]   = medications
     result["snomed"]            = {
         "problems":               snomed["problems"],
+        "treatments":             snomed["treatments"],
         "medications":            snomed["medications"],
+        "investigations":         snomed["investigations"],
         "diagnoses":              snomed["diagnoses"],
-        "all_entities":           snomed.get("entities", [])[:20],
+        "all_entities":           snomed.get("all_entities", [])[:30],
+        "snomed_confidence":      snomed.get("snomed_confidence", 0),
         "used_fallback":          snomed.get("used_fallback", False),
         "top3_fallback":          snomed.get("top3_fallback", []),
         "used_summary_fallback":  snomed.get("used_summary_fallback", False),
