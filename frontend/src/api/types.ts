@@ -13,6 +13,9 @@ export interface PatientInfo {
   presenting_complaint?: string;
 }
 
+// Assertion status for clinical entities (negation detection)
+export type AssertionStatus = 'present' | 'absent' | 'historical' | 'family_history' | 'possible' | 'ruled_out';
+
 export interface SNOMEDEntity {
   text: string;
   category: string;
@@ -25,6 +28,10 @@ export interface SNOMEDEntity {
   result?: string;             // For investigations: "Pending", "Normal", etc.
   priority?: string;           // For investigations: "Urgent", "Routine"
   snomed_description?: string; // Alternative description field
+  // Assertion status from negation detection
+  assertion?: AssertionStatus;           // present, absent, historical, family_history, possible, ruled_out
+  assertion_trigger?: string | null;     // The trigger phrase (e.g., "No", "Denies", "History of")
+  assertion_confidence?: number;         // Confidence in the assertion
 }
 
 export interface SNOMEDData {
@@ -40,6 +47,8 @@ export interface SNOMEDData {
   used_summary_fallback?: boolean;
   used_doctype_fallback?: boolean;
   snomed_confidence?: number;
+  // Negation detection: entities that were filtered out (absent/ruled out)
+  negated_entities?: SNOMEDEntity[];
 }
 
 export interface Medication {
@@ -159,6 +168,10 @@ export interface NEREntity {
   normalized_text?: string;
   attributes?: Record<string, string | number>;
   evidence?: string;
+  // Assertion status from negation detection
+  assertion?: AssertionStatus;
+  assertion_trigger?: string | null;
+  assertion_confidence?: number;
 }
 
 // Medical NER Results (17 distinct categories)

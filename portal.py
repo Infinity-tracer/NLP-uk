@@ -165,6 +165,18 @@ try:
 except ImportError:
     _HAS_ABBREVIATION_RESOLVER = False
 
+# Clinical Negation Detector: Assertion status for entities
+try:
+    from negation_detector import (
+        ClinicalNegationDetector,
+        create_detector as create_negation_detector,
+        AssertionStatus,
+        NegationResult,
+    )
+    _HAS_NEGATION_DETECTOR = True
+except ImportError:
+    _HAS_NEGATION_DETECTOR = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -947,6 +959,69 @@ def run_comprehend_medical(text: str) -> dict:
             print(f"[WARN] Clinical validation failed: {e}", file=sys.stderr)
             validation_warnings.append(f"Clinical validation error: {e}")
 
+    # ── Negation Detection: Filter out negated entities ──────────────────────────
+    # Entities that are negated (No fever, Denies pain) should NOT become
+    # positive SNOMED diagnoses
+    negated_entities = []
+    if _HAS_NEGATION_DETECTOR:
+        try:
+            detector = create_negation_detector(window_size=6)
+
+            def filter_negated(bucket: list, text: str) -> tuple:
+                """Filter out negated entities, return (allowed, negated)"""
+                allowed = []
+                negated = []
+                for entity in bucket:
+                    entity_text = entity.get("text", "")
+                    # Find position in text
+                    import re
+                    match = re.search(re.escape(entity_text), text, re.IGNORECASE)
+                    if match:
+                        start_pos, end_pos = match.start(), match.end()
+                    else:
+                        start_pos, end_pos = 0, len(entity_text)
+
+                    result = detector.detect_assertion(text, entity_text, start_pos, end_pos)
+
+                    # Add assertion status to entity
+                    entity["assertion"] = result.assertion.value
+                    entity["assertion_trigger"] = result.trigger_text
+                    entity["assertion_confidence"] = result.confidence
+
+                    # Only allow PRESENT entities as positive diagnoses/problems
+                    # Historical and Family History are kept but marked
+                    if result.assertion == AssertionStatus.ABSENT:
+                        negated.append(entity)
+                    elif result.assertion == AssertionStatus.RULED_OUT:
+                        negated.append(entity)
+                    else:
+                        allowed.append(entity)
+
+                return allowed, negated
+
+            # Filter diagnoses and problems (most important for negation)
+            diagnoses, neg_diag = filter_negated(diagnoses, text)
+            problems, neg_prob = filter_negated(problems, text)
+            negated_entities.extend(neg_diag)
+            negated_entities.extend(neg_prob)
+
+            # Also filter treatments (might be "not on treatment")
+            treatments, neg_treat = filter_negated(treatments, text)
+            negated_entities.extend(neg_treat)
+
+            # Rebuild all_entities (medications and investigations usually not negated)
+            all_entities = diagnoses + problems + treatments + medications + investigations
+
+            import sys
+            print(f"[DEBUG] Negation detection: {len(negated_entities)} entities filtered out "
+                  f"(negated diagnoses={len(neg_diag)}, problems={len(neg_prob)}, treatments={len(neg_treat)})",
+                  file=sys.stderr)
+
+        except Exception as e:
+            import sys
+            print(f"[WARN] Negation detection failed: {e}", file=sys.stderr)
+            validation_warnings.append(f"Negation detection error: {e}")
+
     # Calculate confidence
     if all_entities:
         snomed_conf = sum(e.get("confidence", 0) for e in all_entities) / len(all_entities)
@@ -974,6 +1049,7 @@ def run_comprehend_medical(text: str) -> dict:
         "used_fallback":         used_fallback,
         "top3_fallback":         top3_fallback,
         "validation_warnings":   validation_warnings,
+        "negated_entities":      negated_entities,  # Entities filtered by negation detection
     }
 
 
@@ -3046,15 +3122,36 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     # ── Track A: SNOMED + ICD + medications ───────────────────────────────────
     try:
         snomed = run_comprehend_medical(doc_text)
+        negated_count = len(snomed.get("negated_entities", []))
         result["pipeline_stages"]["track_a"] = {
             "status": "done",
-            "entities_found": len(snomed["entities"]),
+            "entities_found": len(snomed["all_entities"]),
             "confidence": round(snomed["snomed_confidence"], 3),
             "validation_warnings": snomed.get("validation_warnings", []),
+            "negation_filtered": negated_count,
         }
+        # Add negation detection pipeline stage
+        if _HAS_NEGATION_DETECTOR and negated_count > 0:
+            result["pipeline_stages"]["negation_detection"] = {
+                "status": "done",
+                "entities_filtered": negated_count,
+                "note": "Negated entities excluded from positive diagnoses",
+            }
+        elif _HAS_NEGATION_DETECTOR:
+            result["pipeline_stages"]["negation_detection"] = {
+                "status": "done",
+                "entities_filtered": 0,
+                "note": "No negated entities found",
+            }
+        else:
+            result["pipeline_stages"]["negation_detection"] = {
+                "status": "skipped",
+                "note": "negation_detector module unavailable",
+            }
     except Exception as e:
-        snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3}
+        snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3, "negated_entities": []}
         result["pipeline_stages"]["track_a"] = {"status": "partial", "error": str(e)}
+        result["pipeline_stages"]["negation_detection"] = {"status": "skipped", "error": str(e)}
 
     # ── HIPAA PHI detection (SRS §5.2 / hipaa_compliance.py) ─────────────────
     # detect_phi_entities() uses Comprehend Medical's detect_phi API to surface
@@ -3216,6 +3313,7 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         "top3_fallback":          snomed.get("top3_fallback", []),
         "used_summary_fallback":  snomed.get("used_summary_fallback", False),
         "used_doctype_fallback":  snomed.get("used_doctype_fallback", False),
+        "negated_entities":       snomed.get("negated_entities", [])[:20],  # Entities filtered by negation
     }
     result["summaries"]           = summaries
 
