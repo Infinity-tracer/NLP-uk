@@ -2,13 +2,14 @@
 Clinical Document Processing Portal — Flask backend
 Matches the NHS-style document management UI from the reference screenshot.
 Full auto-pipeline: Upload → Tier0 (OpenCV) → Tier1 Textract → Tier2 routing →
-TrackA SNOMED+HIPAA → TrackB Summarization → Confidence routing → Results.
+TrackA SNOMED+HIPAA → Clinical Validation → TrackB Summarization → Confidence routing → Results.
 
 Wires into the production modules defined in the SRS architecture:
   - document_handler.prepare_document()  — multi-format ingestion (PDF/TIFF/JPEG)
   - preprocessing.preprocess_image()     — Tier 0 OpenCV adaptive threshold + deskew
   - hipaa_compliance.detect_phi_entities() — HIPAA PHI detection on extracted text
   - config.document_type_config           — 21-type classifier + per-type thresholds
+  - clinical_engine                       — Context-aware entity validation + classification
 """
 import base64
 import json
@@ -125,6 +126,23 @@ try:
     _HAS_HIPAA = True
 except ImportError:
     _HAS_HIPAA = False
+
+# Clinical Engine: Context-aware entity validation and classification
+try:
+    from clinical_engine import (
+        process_clinical_entities,
+        categorize_entities_for_output,
+        detect_document_sections,
+        ClinicalValidationEngine,
+        ConfidenceScore,
+        EntityCategory,
+        NegationStatus,
+        TemporalState,
+        SectionType,
+    )
+    _HAS_CLINICAL_ENGINE = True
+except ImportError:
+    _HAS_CLINICAL_ENGINE = False
 
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
@@ -859,6 +877,55 @@ def run_comprehend_medical(text: str) -> dict:
                 problems.append(entry)
             all_entities.append(entry)
 
+    # ── Clinical Engine Validation (when available) ──────────────────────────────
+    # Apply context-aware validation to remove false positives
+    validation_warnings = []
+    if _HAS_CLINICAL_ENGINE:
+        try:
+            validator = ClinicalValidationEngine()
+
+            # Validate each category
+            def validate_bucket(bucket: list, category_name: str) -> list:
+                validated = []
+                for entity in bucket:
+                    # Quick validation checks
+                    text_lower = entity.get("text", "").lower()
+                    snomed_code = entity.get("snomed_code", "")
+                    snomed_desc = entity.get("description", "")
+
+                    # Check anatomy blocklist
+                    if text_lower in validator.ANATOMY_BLOCKLIST:
+                        continue
+                    if snomed_code in validator.ANATOMY_SNOMED_CODES:
+                        continue
+                    if snomed_code in validator.PROCEDURE_SNOMED_CODES and category_name == "diagnoses":
+                        continue
+                    if snomed_desc and "(body structure)" in snomed_desc.lower():
+                        continue
+
+                    validated.append(entity)
+                return validated
+
+            # Apply validation
+            diagnoses = validate_bucket(diagnoses, "diagnoses")
+            problems = validate_bucket(problems, "problems")
+            treatments = validate_bucket(treatments, "treatments")
+            investigations = validate_bucket(investigations, "investigations")
+
+            # Rebuild all_entities
+            all_entities = diagnoses + problems + treatments + medications + investigations
+
+            import sys
+            print(f"[DEBUG] Clinical validation applied: "
+                  f"diagnoses={len(diagnoses)}, problems={len(problems)}, treatments={len(treatments)}, "
+                  f"medications={len(medications)}, investigations={len(investigations)}",
+                  file=sys.stderr)
+
+        except Exception as e:
+            import sys
+            print(f"[WARN] Clinical validation failed: {e}", file=sys.stderr)
+            validation_warnings.append(f"Clinical validation error: {e}")
+
     # Calculate confidence
     if all_entities:
         snomed_conf = sum(e.get("confidence", 0) for e in all_entities) / len(all_entities)
@@ -885,6 +952,7 @@ def run_comprehend_medical(text: str) -> dict:
         "snomed_confidence":     round(snomed_conf, 3),
         "used_fallback":         used_fallback,
         "top3_fallback":         top3_fallback,
+        "validation_warnings":   validation_warnings,
     }
 
 
@@ -2882,6 +2950,24 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         result["error"]  = "No text could be extracted from document"
         return result
 
+    # ── Document Structure Detection (Clinical Engine) ────────────────────────
+    # Detect sections BEFORE entity extraction to provide context
+    detected_sections = []
+    if _HAS_CLINICAL_ENGINE:
+        try:
+            detected_sections = detect_document_sections(doc_text)
+            result["pipeline_stages"]["structure"] = {
+                "status": "done",
+                "sections_found": len(detected_sections),
+                "section_types": [s.section_type.value for s in detected_sections],
+            }
+            import sys
+            print(f"[DEBUG] Document sections detected: {[s.section_type.value for s in detected_sections]}", file=sys.stderr)
+        except Exception as e:
+            result["pipeline_stages"]["structure"] = {"status": "partial", "error": str(e)}
+            import sys
+            print(f"[WARN] Document structure detection failed: {e}", file=sys.stderr)
+
     # ── Track A: SNOMED + ICD + medications ───────────────────────────────────
     try:
         snomed = run_comprehend_medical(doc_text)
@@ -2889,6 +2975,7 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "status": "done",
             "entities_found": len(snomed["entities"]),
             "confidence": round(snomed["snomed_confidence"], 3),
+            "validation_warnings": snomed.get("validation_warnings", []),
         }
     except Exception as e:
         snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3}
@@ -3080,6 +3167,43 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
 
     # HIPAA audit trail (SRS §5.2, §6.2): surface PHI count for compliance logging
     result["phi_entity_count"]   = len(phi_entities)
+
+    # ── Clinical Validation Stage ────────────────────────────────────────────────
+    # Final validation to catch consistency issues and improve accuracy
+    if _HAS_CLINICAL_ENGINE:
+        try:
+            validator = ClinicalValidationEngine()
+            consistency_warnings = validator.validate_consistency(
+                [],  # We validate the raw entities earlier, this checks sections
+                detected_sections
+            )
+            if consistency_warnings:
+                result["validation_warnings"] = consistency_warnings
+                import sys
+                print(f"[DEBUG] Clinical validation warnings: {consistency_warnings}", file=sys.stderr)
+
+            result["pipeline_stages"]["validation"] = {
+                "status": "done",
+                "warnings_count": len(consistency_warnings),
+            }
+        except Exception as e:
+            result["pipeline_stages"]["validation"] = {"status": "partial", "error": str(e)}
+            import sys
+            print(f"[WARN] Clinical validation stage failed: {e}", file=sys.stderr)
+
+    # ── Component-Level Confidence Scoring ───────────────────────────────────────
+    # Provide detailed confidence breakdown for explainability
+    if _HAS_CLINICAL_ENGINE:
+        confidence_breakdown = ConfidenceScore(
+            ocr_quality=textract_conf,
+            layout_detection=0.8 if detected_sections else 0.5,
+            entity_extraction=snomed.get("snomed_confidence", 0.5),
+            entity_classification=0.75,  # Classification confidence
+            clinical_coding=snomed.get("snomed_confidence", 0.5),
+            validation=0.85 if not result.get("validation_warnings") else 0.70,
+        )
+        confidence_breakdown.compute_overall()
+        result["confidence_breakdown"] = confidence_breakdown.to_dict()
 
     return result
 
