@@ -177,6 +177,19 @@ try:
 except ImportError:
     _HAS_NEGATION_DETECTOR = False
 
+# Temporal Clinical Reasoner: Differentiates current vs historical
+try:
+    from temporal_reasoner import (
+        ClinicalTemporalReasoner,
+        create_reasoner as create_temporal_reasoner,
+        TemporalState,
+        ClinicalTemporalCategory,
+        TemporalResult,
+    )
+    _HAS_TEMPORAL_REASONER = True
+except ImportError:
+    _HAS_TEMPORAL_REASONER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -1022,6 +1035,70 @@ def run_comprehend_medical(text: str) -> dict:
             print(f"[WARN] Negation detection failed: {e}", file=sys.stderr)
             validation_warnings.append(f"Negation detection error: {e}")
 
+    # ── Temporal Reasoning: Classify current vs historical ────────────────────────
+    # Every entity gets a temporal state: current, historical, resolved, suspected, chronic, acute
+    temporal_stats = {"current": 0, "historical": 0, "resolved": 0, "suspected": 0, "chronic": 0, "acute": 0}
+    if _HAS_TEMPORAL_REASONER:
+        try:
+            reasoner = create_temporal_reasoner(window_size=8)
+
+            def add_temporal(bucket: list, text: str, entity_type: str = None) -> list:
+                """Add temporal state to each entity"""
+                for entity in bucket:
+                    entity_text = entity.get("text", "")
+                    import re
+                    match = re.search(re.escape(entity_text), text, re.IGNORECASE)
+                    if match:
+                        start_pos, end_pos = match.start(), match.end()
+                    else:
+                        start_pos, end_pos = 0, len(entity_text)
+
+                    result = reasoner.reason_temporal(text, entity_text, start_pos, end_pos, entity_type)
+
+                    # Add temporal info to entity
+                    entity["temporal_state"] = result.temporal_state.value
+                    entity["temporal_trigger"] = result.trigger_text
+                    entity["temporal_confidence"] = result.confidence
+                    if result.clinical_category:
+                        entity["clinical_temporal_category"] = result.clinical_category.value
+                    if result.time_reference:
+                        entity["time_reference"] = result.time_reference
+
+                    # Update stats
+                    temporal_stats[result.temporal_state.value] += 1
+
+                return bucket
+
+            # Add temporal state to all buckets
+            diagnoses = add_temporal(diagnoses, text, "diagnosis")
+            problems = add_temporal(problems, text, "symptom")
+            treatments = add_temporal(treatments, text, "treatment")
+            medications = add_temporal(medications, text, "medication")
+            investigations = add_temporal(investigations, text, "investigation")
+
+            # Also add to negated entities
+            for entity in negated_entities:
+                entity_text = entity.get("text", "")
+                import re
+                match = re.search(re.escape(entity_text), text, re.IGNORECASE)
+                if match:
+                    result = reasoner.reason_temporal(text, entity_text, match.start(), match.end())
+                    entity["temporal_state"] = result.temporal_state.value
+                    entity["temporal_trigger"] = result.trigger_text
+                    if result.clinical_category:
+                        entity["clinical_temporal_category"] = result.clinical_category.value
+
+            import sys
+            print(f"[DEBUG] Temporal reasoning: current={temporal_stats['current']}, "
+                  f"historical={temporal_stats['historical']}, chronic={temporal_stats['chronic']}, "
+                  f"acute={temporal_stats['acute']}, resolved={temporal_stats['resolved']}, "
+                  f"suspected={temporal_stats['suspected']}", file=sys.stderr)
+
+        except Exception as e:
+            import sys
+            print(f"[WARN] Temporal reasoning failed: {e}", file=sys.stderr)
+            validation_warnings.append(f"Temporal reasoning error: {e}")
+
     # Calculate confidence
     if all_entities:
         snomed_conf = sum(e.get("confidence", 0) for e in all_entities) / len(all_entities)
@@ -1050,6 +1127,7 @@ def run_comprehend_medical(text: str) -> dict:
         "top3_fallback":         top3_fallback,
         "validation_warnings":   validation_warnings,
         "negated_entities":      negated_entities,  # Entities filtered by negation detection
+        "temporal_stats":        temporal_stats,    # Temporal state distribution
     }
 
 
@@ -3148,10 +3226,30 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
                 "status": "skipped",
                 "note": "negation_detector module unavailable",
             }
+        # Add temporal reasoning pipeline stage
+        temporal_stats = snomed.get("temporal_stats", {})
+        if _HAS_TEMPORAL_REASONER and any(temporal_stats.values()):
+            result["pipeline_stages"]["temporal_reasoning"] = {
+                "status": "done",
+                "temporal_distribution": temporal_stats,
+                "note": "Entities classified by temporal state",
+            }
+        elif _HAS_TEMPORAL_REASONER:
+            result["pipeline_stages"]["temporal_reasoning"] = {
+                "status": "done",
+                "temporal_distribution": {},
+                "note": "No entities to classify",
+            }
+        else:
+            result["pipeline_stages"]["temporal_reasoning"] = {
+                "status": "skipped",
+                "note": "temporal_reasoner module unavailable",
+            }
     except Exception as e:
-        snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3, "negated_entities": []}
+        snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3, "negated_entities": [], "temporal_stats": {}}
         result["pipeline_stages"]["track_a"] = {"status": "partial", "error": str(e)}
         result["pipeline_stages"]["negation_detection"] = {"status": "skipped", "error": str(e)}
+        result["pipeline_stages"]["temporal_reasoning"] = {"status": "skipped", "error": str(e)}
 
     # ── HIPAA PHI detection (SRS §5.2 / hipaa_compliance.py) ─────────────────
     # detect_phi_entities() uses Comprehend Medical's detect_phi API to surface
@@ -3314,6 +3412,7 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         "used_summary_fallback":  snomed.get("used_summary_fallback", False),
         "used_doctype_fallback":  snomed.get("used_doctype_fallback", False),
         "negated_entities":       snomed.get("negated_entities", [])[:20],  # Entities filtered by negation
+        "temporal_stats":         snomed.get("temporal_stats", {}),         # Temporal state distribution
     }
     result["summaries"]           = summaries
 

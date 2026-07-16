@@ -16,6 +16,22 @@ export interface PatientInfo {
 // Assertion status for clinical entities (negation detection)
 export type AssertionStatus = 'present' | 'absent' | 'historical' | 'family_history' | 'possible' | 'ruled_out';
 
+// Temporal state for clinical entities
+export type TemporalState = 'current' | 'historical' | 'resolved' | 'suspected' | 'chronic' | 'acute';
+
+// Clinical temporal category
+export type ClinicalTemporalCategory =
+  | 'current_diagnosis'
+  | 'past_medical_history'
+  | 'previous_surgery'
+  | 'resolved_symptom'
+  | 'current_symptom'
+  | 'chronic_disease'
+  | 'family_history'
+  | 'medication_history'
+  | 'current_medication'
+  | 'acute_presentation';
+
 export interface SNOMEDEntity {
   text: string;
   category: string;
@@ -32,6 +48,22 @@ export interface SNOMEDEntity {
   assertion?: AssertionStatus;           // present, absent, historical, family_history, possible, ruled_out
   assertion_trigger?: string | null;     // The trigger phrase (e.g., "No", "Denies", "History of")
   assertion_confidence?: number;         // Confidence in the assertion
+  // Temporal state from temporal reasoning
+  temporal_state?: TemporalState;        // current, historical, resolved, suspected, chronic, acute
+  temporal_trigger?: string | null;      // The trigger phrase (e.g., "History of", "Resolved", "Chronic")
+  temporal_confidence?: number;          // Confidence in the temporal classification
+  clinical_temporal_category?: ClinicalTemporalCategory;  // More specific category
+  time_reference?: string;               // Time reference (e.g., "2019", "3 years ago")
+}
+
+// Temporal state distribution stats
+export interface TemporalStats {
+  current: number;
+  historical: number;
+  resolved: number;
+  suspected: number;
+  chronic: number;
+  acute: number;
 }
 
 export interface SNOMEDData {
@@ -49,6 +81,8 @@ export interface SNOMEDData {
   snomed_confidence?: number;
   // Negation detection: entities that were filtered out (absent/ruled out)
   negated_entities?: SNOMEDEntity[];
+  // Temporal reasoning: distribution of temporal states
+  temporal_stats?: TemporalStats;
 }
 
 export interface Medication {
@@ -172,6 +206,12 @@ export interface NEREntity {
   assertion?: AssertionStatus;
   assertion_trigger?: string | null;
   assertion_confidence?: number;
+  // Temporal state from temporal reasoning
+  temporal_state?: TemporalState;
+  temporal_trigger?: string | null;
+  temporal_confidence?: number;
+  clinical_temporal_category?: ClinicalTemporalCategory;
+  time_reference?: string;
 }
 
 // Medical NER Results (17 distinct categories)
