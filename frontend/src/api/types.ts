@@ -158,7 +158,8 @@ export interface ProcessResult {
   structured: StructuredFields;
   clinical_specifics: ClinicalSpecifics;
 
-  extracted_text: string;
+  extracted_text: string;       // Normalized text (used for NLP)
+  raw_ocr_text?: string;        // Original OCR output before normalization
   icd_codes: string[];
   medications_raw: Medication[];
 

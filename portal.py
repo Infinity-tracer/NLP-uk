@@ -144,6 +144,13 @@ try:
 except ImportError:
     _HAS_CLINICAL_ENGINE = False
 
+# OCR Normalizer: Medical text preprocessing for NLP
+try:
+    from ocr_normalizer import MedicalTextNormalizer, normalize_medical_text
+    _HAS_OCR_NORMALIZER = True
+except ImportError:
+    _HAS_OCR_NORMALIZER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -2950,6 +2957,36 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         result["error"]  = "No text could be extracted from document"
         return result
 
+    # ── OCR Normalization (Medical Text Preprocessing) ────────────────────────
+    # Normalize OCR text before NLP processing to correct common errors
+    raw_ocr_text = doc_text  # Preserve original OCR output
+    if _HAS_OCR_NORMALIZER:
+        try:
+            normalizer = MedicalTextNormalizer()
+            norm_result = normalizer.normalize(doc_text)
+            doc_text = norm_result.normalized_text
+            norm_stats = normalizer.get_statistics(norm_result)
+            result["pipeline_stages"]["ocr_normalization"] = {
+                "status": "done",
+                "corrections_count": norm_stats["corrections_count"],
+                "artifacts_removed": norm_stats["artifacts_removed"],
+                "lines_merged": norm_stats["lines_merged"],
+                "unicode_normalized": norm_stats["unicode_normalized"],
+                "length_change_percent": norm_stats["length_change_percent"],
+            }
+            import sys
+            print(f"[DEBUG] OCR normalization: {norm_stats['corrections_count']} corrections, "
+                  f"{norm_stats['artifacts_removed']} artifacts removed", file=sys.stderr)
+        except Exception as e:
+            result["pipeline_stages"]["ocr_normalization"] = {"status": "partial", "error": str(e)}
+            import sys
+            print(f"[WARN] OCR normalization failed: {e}", file=sys.stderr)
+    else:
+        result["pipeline_stages"]["ocr_normalization"] = {
+            "status": "skipped",
+            "note": "ocr_normalizer module unavailable",
+        }
+
     # ── Document Structure Detection (Clinical Engine) ────────────────────────
     # Detect sections BEFORE entity extraction to provide context
     detected_sections = []
@@ -3101,7 +3138,8 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     result["patient_info"]      = patient_info
     result["structured"]        = struct_fields
     result["clinical_specifics"]= clinical_extras   # type-specific extras (TNM, CD4, OGTT, etc.)
-    result["extracted_text"]    = doc_text[:8000]   # cap for JSON response
+    result["extracted_text"]    = doc_text[:8000]   # normalized text for downstream NLP
+    result["raw_ocr_text"]      = raw_ocr_text[:8000] if _HAS_OCR_NORMALIZER else doc_text[:8000]  # original OCR
     result["icd_codes"]         = icd_codes
     result["medications_raw"]   = medications
     result["snomed"]            = {
