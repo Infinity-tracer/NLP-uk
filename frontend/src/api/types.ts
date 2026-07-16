@@ -21,17 +21,21 @@ export interface SNOMEDEntity {
   confidence: number;
   entity_id: string;
   source: string;
+  clinical_category?: string;  // problems | treatments | medications | investigations | diagnoses
 }
 
 export interface SNOMEDData {
-  problems: SNOMEDEntity[];
-  medications: SNOMEDEntity[];
-  diagnoses: SNOMEDEntity[];
+  // 5 clinical categories with SNOMED codes
+  problems: SNOMEDEntity[];       // Symptoms/issues (e.g., neck pain, tummy irritation)
+  treatments: SNOMEDEntity[];     // Therapeutic procedures (e.g., Mental Health treatment, Chemo)
+  medications: SNOMEDEntity[];    // Drugs (e.g., Thyroxine, Aspirin)
+  investigations: SNOMEDEntity[]; // Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio)
+  diagnoses: SNOMEDEntity[];      // Confirmed conditions (e.g., ulcerative colitis)
   all_entities: SNOMEDEntity[];
   used_fallback: boolean;
   top3_fallback: SNOMEDEntity[];
-  used_summary_fallback: boolean;
-  used_doctype_fallback: boolean;
+  used_summary_fallback?: boolean;
+  used_doctype_fallback?: boolean;
   snomed_confidence?: number;
 }
 

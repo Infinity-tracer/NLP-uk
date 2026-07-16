@@ -550,93 +550,280 @@ def _get_doctype_snomed_codes(letter_type: str) -> list:
     return [{**e, "entity_id": str(_uuid_mod.uuid4())[:8]} for e in base]
 
 
+def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> str:
+    """Categorize SNOMED entity into one of 5 clinical categories:
+    - problems: Symptoms, findings, conditions (e.g., neck pain, tummy irritation)
+    - treatments: Therapeutic procedures (e.g., Mental Health treatment, Chemo)
+    - medications: Drugs and substances (e.g., Thyroxine, Aspirin)
+    - investigations: Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio)
+    - diagnoses: Confirmed conditions (e.g., ulcerative colitis)
+    """
+    desc_lower = description.lower()
+    text_lower = entity.get("Text", "").lower()
+    category = entity.get("Category", "").upper()
+    entity_type = entity.get("Type", "").upper()
+
+    # Check traits for DIAGNOSIS marker
+    trait_names = [t.get("Name", "").upper() for t in traits]
+    if "DIAGNOSIS" in trait_names:
+        return "diagnoses"
+
+    # Category-based classification from Comprehend Medical
+    if category in ("MEDICATION", "GENERIC_NAME", "BRAND_NAME"):
+        return "medications"
+    if category == "TEST_NAME" or entity_type == "TEST_NAME":
+        return "investigations"
+    if category == "PROCEDURE_NAME" or entity_type == "PROCEDURE_NAME":
+        # Distinguish treatment procedures from diagnostic procedures
+        if any(x in desc_lower for x in ["imaging", "scan", "x-ray", "xray", "radiograph",
+                                          "angiograph", "endoscop", "colonoscop", "gastroscop",
+                                          "mammograph", "ultrasound", "mri", "ct ", "pet ",
+                                          "biopsy", "smear", "blood test", "urine test",
+                                          "ecg", "ekg", "echocardiog", "spirometr"]):
+            return "investigations"
+        return "treatments"
+    if category == "TREATMENT_NAME" or entity_type == "TREATMENT_NAME":
+        return "treatments"
+
+    # SNOMED description-based classification (from semantic tag in parentheses)
+    if "(procedure)" in desc_lower:
+        # Check if it's a diagnostic/investigative procedure
+        if any(x in desc_lower for x in ["imaging", "scan", "radiograph", "endoscop",
+                                          "examination", "measurement", "test", "biopsy",
+                                          "assessment", "screening", "angiograph"]):
+            return "investigations"
+        # Check if it's a therapeutic procedure
+        if any(x in desc_lower for x in ["therapy", "treatment", "chemotherapy", "radiotherapy",
+                                          "surgery", "surgical", "repair", "removal", "excision",
+                                          "transplant", "infusion", "injection", "counseling",
+                                          "rehabilitation", "physiotherapy"]):
+            return "treatments"
+        return "treatments"  # Default procedures to treatments
+
+    if "(substance)" in desc_lower or "(product)" in desc_lower:
+        return "medications"
+
+    # Text-based classification for common patterns
+    # Investigations
+    if any(x in text_lower for x in ["ct ", "ct scan", "mri", "x-ray", "xray", "ultrasound",
+                                      "blood test", "urine test", "ecg", "ekg", "angio",
+                                      "colonoscopy", "endoscopy", "biopsy", "smear",
+                                      "mammogram", "pet scan", "bone scan"]):
+        return "investigations"
+
+    # Treatments
+    if any(x in text_lower for x in ["chemotherapy", "radiotherapy", "therapy", "treatment",
+                                      "surgery", "physiotherapy", "counseling", "rehabilitation"]):
+        return "treatments"
+
+    # Medications (common drug patterns)
+    if any(x in text_lower for x in ["mg", "mcg", "ml", "tablet", "capsule", "injection",
+                                      "aspirin", "paracetamol", "ibuprofen", "metformin"]):
+        return "medications"
+
+    # Symptoms/findings go to problems
+    if "SYMPTOM" in trait_names or "SIGN" in trait_names:
+        return "problems"
+    if "(finding)" in desc_lower or "(disorder)" in desc_lower or "(situation)" in desc_lower:
+        return "problems"
+
+    # Default to problems for unclassified medical conditions
+    return "problems"
+
+
 def run_comprehend_medical(text: str) -> dict:
-    """Run SNOMED mapping via Comprehend Medical.
+    """Run SNOMED mapping via Comprehend Medical with 5-category classification.
 
-    Primary path  : InferSNOMEDCT on full document text.
-    Fallback path : detect_entities_v2 → per-term InferSNOMEDCT → top-6 results.
-    (SRS §3.2 — semantic SNOMED fallback when primary returns 0 entities.)
+    Categories (as requested):
+    - problems: Symptoms, issues (e.g., neck pain, tummy irritation) with SNOMED
+    - treatments: Therapeutic procedures (e.g., Mental Health treatment, Chemo) with SNOMED
+    - medications: Drugs (e.g., Thyroxine, Aspirin) with SNOMED
+    - investigations: Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio) with SNOMED
+    - diagnoses: Confirmed conditions (e.g., ulcerative colitis) with SNOMED
 
-    Fix 6 (data-driven): Entities are now classified as significant_problems vs
-    minor_problems by Comprehend confidence score, matching the significant/minor
-    split observed across all 20 expected outputs:
-      - score >= 0.70 → significant problem (primary clinical concern)
-      - score 0.30–0.69 → minor problem (comorbidity / secondary finding)
-      - DIAGNOSIS trait → diagnoses bucket regardless of score
+    Primary path: InferSNOMEDCT on full document text.
+    Fallback path: detect_entities_v2 → per-term InferSNOMEDCT → top results.
     """
     client = make_client("comprehendmedical")
+
+    # Initialize 5 category buckets
+    problems, treatments, medications, investigations, diagnoses = [], [], [], [], []
+    all_entities = []
+    seen_codes = set()
+
+    # ── Primary: InferSNOMEDCT for SNOMED codes ──
     try:
         resp = client.infer_snomedct(Text=text[:10000])
-        entities = resp.get("Entities", [])
-    except Exception:
-        entities = []
+        snomed_entities = resp.get("Entities", [])
+    except Exception as e:
+        import sys
+        print(f"[WARN] InferSNOMEDCT failed: {e}", file=sys.stderr)
+        snomed_entities = []
 
-    problems, medications, diagnoses = [], [], []
-    significant_problems, minor_problems = [], []
-
-    for e in entities:
+    for e in snomed_entities:
         concepts = e.get("SNOMEDCTConcepts", [])
-        top = concepts[0] if concepts else {}
-        if not top.get("Code"):
+        # Get the highest-scoring SNOMED concept
+        if concepts:
+            top = max(concepts, key=lambda c: c.get("Score", 0))
+        else:
             continue
-        if not _is_condition_like_entity(e, top.get("Description", "")):
+        code = top.get("Code", "")
+        if not code or code in seen_codes:
             continue
-        score = float(e.get("Score", 0))
+        seen_codes.add(code)
+
+        score = float(top.get("Score", e.get("Score", 0)))
+        description = top.get("Description", "")
+        traits = e.get("Traits", [])
+
         entry = {
             "text":        e.get("Text", ""),
             "category":    e.get("Category", ""),
-            "snomed_code": top.get("Code", ""),
-            "description": top.get("Description", ""),
-            "confidence":  score,
+            "snomed_code": code,
+            "description": description,
+            "confidence":  round(score, 3),
             "entity_id":   str(uuid.uuid4())[:8],
-            "source":      "comprehend_medical",
+            "source":      "comprehend_snomed",
         }
-        is_diagnosis = any(
-            (t.get("Name", "") or "").upper() == "DIAGNOSIS"
-            for t in e.get("Traits", [])
-        )
-        if is_diagnosis:
-            diagnoses.append(entry)
-        else:
-            problems.append(entry)
-            # Classify significant vs minor by confidence
-            if score >= 0.70:
-                significant_problems.append(entry)
-            elif score >= 0.30:
-                minor_problems.append(entry)
 
-    # ── Fallback: term-by-term extraction when full-doc InferSNOMEDCT finds nothing ──
+        # Categorize into 5 buckets
+        bucket = _categorize_snomed_entity(e, description, traits)
+        entry["clinical_category"] = bucket
+
+        if bucket == "problems":
+            problems.append(entry)
+        elif bucket == "treatments":
+            treatments.append(entry)
+        elif bucket == "medications":
+            medications.append(entry)
+        elif bucket == "investigations":
+            investigations.append(entry)
+        elif bucket == "diagnoses":
+            diagnoses.append(entry)
+
+        all_entities.append(entry)
+
+    # ── Secondary: detect_entities_v2 for medications ──
+    try:
+        resp_v2 = client.detect_entities_v2(Text=text[:10000])
+        v2_entities = resp_v2.get("Entities", [])
+    except Exception:
+        v2_entities = []
+
+    for e in v2_entities:
+        entity_type = e.get("Type", "").upper()
+        category = e.get("Category", "").upper()
+        text_val = e.get("Text", "").strip()
+
+        if not text_val or len(text_val) < 2:
+            continue
+
+        # Only process medication entities not already captured
+        if category == "MEDICATION" or entity_type in ("GENERIC_NAME", "BRAND_NAME"):
+            # Try to get SNOMED code for this medication
+            try:
+                med_resp = client.infer_snomedct(Text=text_val)
+                med_entities = med_resp.get("Entities", [])
+                if med_entities:
+                    med_concepts = med_entities[0].get("SNOMEDCTConcepts", [])
+                    if med_concepts:
+                        top_med = max(med_concepts, key=lambda c: c.get("Score", 0))
+                        code = top_med.get("Code", "")
+                        if code and code not in seen_codes:
+                            seen_codes.add(code)
+                            entry = {
+                                "text":        text_val,
+                                "category":    "MEDICATION",
+                                "snomed_code": code,
+                                "description": top_med.get("Description", ""),
+                                "confidence":  round(float(top_med.get("Score", e.get("Score", 0.7))), 3),
+                                "entity_id":   str(uuid.uuid4())[:8],
+                                "source":      "comprehend_medication",
+                                "clinical_category": "medications",
+                            }
+                            medications.append(entry)
+                            all_entities.append(entry)
+            except Exception:
+                pass
+
+        # Also capture TEST_NAME entities as investigations
+        elif category == "TEST_TREATMENT_PROCEDURE" and entity_type == "TEST_NAME":
+            try:
+                test_resp = client.infer_snomedct(Text=text_val)
+                test_entities = test_resp.get("Entities", [])
+                if test_entities:
+                    test_concepts = test_entities[0].get("SNOMEDCTConcepts", [])
+                    if test_concepts:
+                        top_test = max(test_concepts, key=lambda c: c.get("Score", 0))
+                        code = top_test.get("Code", "")
+                        if code and code not in seen_codes:
+                            seen_codes.add(code)
+                            entry = {
+                                "text":        text_val,
+                                "category":    "TEST_NAME",
+                                "snomed_code": code,
+                                "description": top_test.get("Description", ""),
+                                "confidence":  round(float(top_test.get("Score", e.get("Score", 0.7))), 3),
+                                "entity_id":   str(uuid.uuid4())[:8],
+                                "source":      "comprehend_investigation",
+                                "clinical_category": "investigations",
+                            }
+                            investigations.append(entry)
+                            all_entities.append(entry)
+            except Exception:
+                pass
+
+    # ── Fallback: term-by-term extraction when nothing found ──
     used_fallback = False
     top3_fallback: list = []
-    if not entities:
+    if not all_entities:
         top3_fallback = _snomed_term_fallback(text, client)
         used_fallback = bool(top3_fallback)
         for entry in top3_fallback:
+            desc = entry.get("description", "")
             cat = entry.get("category", "").upper()
-            score = float(entry.get("confidence", 0))
-            if "DIAGNOSIS" in cat or "CONDITION" in cat:
+
+            # Classify fallback entries
+            if "MEDICATION" in cat or "(substance)" in desc.lower() or "(product)" in desc.lower():
+                entry["clinical_category"] = "medications"
+                medications.append(entry)
+            elif "(procedure)" in desc.lower():
+                if any(x in desc.lower() for x in ["scan", "imaging", "test", "examination"]):
+                    entry["clinical_category"] = "investigations"
+                    investigations.append(entry)
+                else:
+                    entry["clinical_category"] = "treatments"
+                    treatments.append(entry)
+            elif "DIAGNOSIS" in cat or "(disorder)" in desc.lower():
+                entry["clinical_category"] = "diagnoses"
                 diagnoses.append(entry)
             else:
+                entry["clinical_category"] = "problems"
                 problems.append(entry)
-                if score >= 0.70:
-                    significant_problems.append(entry)
-                elif score >= 0.30:
-                    minor_problems.append(entry)
+            all_entities.append(entry)
 
-    # Confidence: avg entity score (primary) OR avg fallback score OR default
-    if entities:
-        snomed_conf = sum(e.get("Score", 0) for e in entities) / len(entities)
-    elif top3_fallback:
-        snomed_conf = sum(e["confidence"] for e in top3_fallback) / len(top3_fallback)
+    # Calculate confidence
+    if all_entities:
+        snomed_conf = sum(e.get("confidence", 0) for e in all_entities) / len(all_entities)
     else:
         snomed_conf = 0.3
 
+    # Sort each bucket by confidence (highest first)
+    for bucket in [problems, treatments, medications, investigations, diagnoses]:
+        bucket.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+
+    import sys
+    print(f"[DEBUG] SNOMED extraction: problems={len(problems)}, treatments={len(treatments)}, "
+          f"medications={len(medications)}, investigations={len(investigations)}, diagnoses={len(diagnoses)}",
+          file=sys.stderr)
+
     return {
-        "entities":              entities,
+        "entities":              snomed_entities,
+        "all_entities":          all_entities,
         "problems":              problems,
-        "significant_problems":  significant_problems,
-        "minor_problems":        minor_problems,
+        "treatments":            treatments,
         "medications":           medications,
+        "investigations":        investigations,
         "diagnoses":             diagnoses,
         "snomed_confidence":     round(snomed_conf, 3),
         "used_fallback":         used_fallback,
