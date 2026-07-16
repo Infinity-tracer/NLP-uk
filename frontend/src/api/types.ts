@@ -134,6 +134,20 @@ export interface InvestigationItem {
   snomed_code?: string;
 }
 
+// Resolved clinical abbreviation
+export interface ResolvedAbbreviation {
+  abbreviation: string;
+  expansion: string;
+  category: string;
+  position: number;
+}
+
+// Abbreviation resolution result
+export interface AbbreviationResult {
+  resolved: ResolvedAbbreviation[];
+  stats: Record<string, number>;
+}
+
 // Medical NER Entity (17 categories)
 export interface NEREntity {
   text: string;
@@ -216,6 +230,9 @@ export interface ProcessResult {
 
   // Medical NER (17 categories)
   medical_ner?: MedicalNERResult;
+
+  // Clinical abbreviations (both forms stored)
+  abbreviations?: AbbreviationResult;
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';

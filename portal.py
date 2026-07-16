@@ -158,6 +158,13 @@ try:
 except ImportError:
     _HAS_MEDICAL_NER = False
 
+# Clinical Abbreviation Resolver: Expands NHS abbreviations
+try:
+    from abbreviation_resolver import ClinicalAbbreviationResolver, resolve_clinical_abbreviations
+    _HAS_ABBREVIATION_RESOLVER = True
+except ImportError:
+    _HAS_ABBREVIATION_RESOLVER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -2994,6 +3001,30 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "note": "ocr_normalizer module unavailable",
         }
 
+    # ── Abbreviation Resolution (Expand NHS Abbreviations) ────────────────────
+    # Expand abbreviations before NER to improve entity extraction
+    abbreviation_result = None
+    if _HAS_ABBREVIATION_RESOLVER:
+        try:
+            abbrev_resolver = ClinicalAbbreviationResolver(expand_in_text=False)
+            abbreviation_result = abbrev_resolver.resolve(doc_text)
+            result["pipeline_stages"]["abbreviation_resolution"] = {
+                "status": "done",
+                "abbreviations_found": abbreviation_result.stats.get("total", 0),
+                "categories": {k: v for k, v in abbreviation_result.stats.items() if v > 0 and k != "total"},
+            }
+            import sys
+            print(f"[DEBUG] Abbreviation resolution: {abbreviation_result.stats.get('total', 0)} abbreviations found", file=sys.stderr)
+        except Exception as e:
+            result["pipeline_stages"]["abbreviation_resolution"] = {"status": "partial", "error": str(e)}
+            import sys
+            print(f"[WARN] Abbreviation resolution failed: {e}", file=sys.stderr)
+    else:
+        result["pipeline_stages"]["abbreviation_resolution"] = {
+            "status": "skipped",
+            "note": "abbreviation_resolver module unavailable",
+        }
+
     # ── Document Structure Detection (Clinical Engine) ────────────────────────
     # Detect sections BEFORE entity extraction to provide context
     detected_sections = []
@@ -3259,6 +3290,22 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "clinical_scores": [e.to_dict() for e in ner_result.by_category.get("clinical_score", [])],
             "vital_signs": [e.to_dict() for e in ner_result.by_category.get("vital_sign", [])],
             "stats": ner_result.extraction_stats,
+        }
+
+    # ── Abbreviation data in result ──────────────────────────────────────────────
+    # Store both original abbreviations and their expansions
+    if abbreviation_result:
+        result["abbreviations"] = {
+            "resolved": [
+                {
+                    "abbreviation": a.abbreviation,
+                    "expansion": a.expansion,
+                    "category": a.category.value,
+                    "position": a.start_pos,
+                }
+                for a in abbreviation_result.resolved_abbreviations
+            ],
+            "stats": abbreviation_result.stats,
         }
 
     # ── Clinical Validation Stage ────────────────────────────────────────────────
