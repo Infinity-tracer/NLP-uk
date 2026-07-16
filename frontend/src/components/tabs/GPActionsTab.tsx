@@ -79,6 +79,12 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
 
   const hasPatientActions = patientActions.length > 0 || patientBooking.length > 0;
 
+  // Check if document explicitly states "No action required" for GP
+  const extractedText = result.extracted_text?.toLowerCase() || '';
+  const noGPActionExplicit = extractedText.includes('no action required') ||
+                             extractedText.includes('no gp action') ||
+                             extractedText.includes('actions required of general practice (gp)') && extractedText.includes('no action required');
+
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href.split('#')[0]);
     alert('Page link copied to clipboard.');
@@ -102,6 +108,13 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
               <RoleBlock role="pharmacist" actions={gpActions.pharmacist || []} />
               <RoleBlock role="reception" actions={gpActions.reception || []} />
             </>
+          ) : noGPActionExplicit ? (
+            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <span className="text-green-600 text-lg">✓</span>
+              <span className="text-sm font-medium text-green-700">
+                No GP action required — document explicitly states no actions needed.
+              </span>
+            </div>
           ) : (
             <div className="text-sm text-gray-400 italic">
               No GP surgery actions identified for this document.

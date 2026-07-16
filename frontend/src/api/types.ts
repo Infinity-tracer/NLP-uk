@@ -22,6 +22,9 @@ export interface SNOMEDEntity {
   entity_id: string;
   source: string;
   clinical_category?: string;  // problems | treatments | medications | investigations | diagnoses
+  result?: string;             // For investigations: "Pending", "Normal", etc.
+  priority?: string;           // For investigations: "Urgent", "Routine"
+  snomed_description?: string; // Alternative description field
 }
 
 export interface SNOMEDData {

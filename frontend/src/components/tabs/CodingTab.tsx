@@ -69,6 +69,12 @@ function SNOMEDCard({ entity, category }: { entity: SNOMEDEntity; category: Clin
   const confPercent = Math.round((entity.confidence || 0) * 100);
   const confColor = confPercent >= 80 ? 'text-green-600' : confPercent >= 60 ? 'text-yellow-600' : 'text-orange-600';
 
+  // Priority badge for investigations (Urgent/Routine)
+  const priority = (entity as { priority?: string }).priority;
+  const result = (entity as { result?: string }).result;
+  const isUrgent = priority?.toLowerCase() === 'urgent';
+  const isPending = result?.toLowerCase() === 'pending';
+
   return (
     <div className={`border ${config.border} border-l-4 rounded-lg p-3 mb-2 ${config.bg}`}>
       <div className="flex justify-between items-start gap-2">
@@ -79,8 +85,26 @@ function SNOMEDCard({ entity, category }: { entity: SNOMEDEntity; category: Clin
               {entity.snomed_code}
             </code>
           )}
+          {/* Priority badge for investigations */}
+          {priority && (
+            <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+              isUrgent
+                ? 'bg-red-100 text-red-700 border border-red-300'
+                : 'bg-gray-100 text-gray-600 border border-gray-300'
+            }`}>
+              {priority}
+            </span>
+          )}
+          {/* Pending status badge */}
+          {isPending && (
+            <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300">
+              Pending
+            </span>
+          )}
         </div>
-        <span className={`text-xs font-bold ${confColor}`}>{confPercent}%</span>
+        {confPercent > 0 && (
+          <span className={`text-xs font-bold ${confColor}`}>{confPercent}%</span>
+        )}
       </div>
       {entity.description && (
         <div className="text-xs text-gray-600 mt-1 italic">

@@ -301,6 +301,40 @@ _SNOMED_NON_CONDITION_TERMS = {
     "nil", "none", "normal", "unremarkable", "nab", "nak", "no", "not",
 }
 
+# FALSE POSITIVE SNOMED TERMS - terms that AWS Comprehend incorrectly identifies
+# These should NEVER appear in SNOMED output - they are hallucinations or misclassifications
+_SNOMED_FALSE_POSITIVE_TERMS = {
+    # Anatomy terms (should not be coded as conditions/diagnoses)
+    "disc", "disk", "rectum", "colon", "anus", "anal", "sigmoid", "descending",
+    "mucosa", "tissue", "skin", "tag", "tags", "anal skin tag", "skin tags",
+    # Procedure fragments misidentified as conditions
+    "eua", "lrb", "flexible", "sigmoidoscopy", "banding", "excision",
+    # Non-specific terms
+    "specimen", "specimens", "source", "type", "tests", "collected",
+    "priority", "urgent", "routine", "description",
+    # Document structure terms
+    "diagnosis", "post-op", "pre-op", "instructions", "information",
+    "details", "section", "actions", "required", "pending",
+}
+
+# SNOMED codes that are false positives (anatomy, procedure fragments)
+_SNOMED_FALSE_POSITIVE_CODES = {
+    # Anatomy codes - should not appear as diagnoses/problems
+    "34402009",   # Rectum structure
+    "71854001",   # Colon structure
+    "53505006",   # Anal structure
+    "60184004",   # Sigmoid colon structure
+    "32713005",   # Descending colon structure
+    "414781009",  # Mucosa structure
+    "39937001",   # Skin structure
+    # Procedure fragments
+    "73761001",   # Colonoscopy (should be in investigations, not diagnoses)
+    "44441009",   # Flexible sigmoidoscopy (should be in treatments/investigations)
+    # Non-specific/generic
+    "123037004",  # Body structure
+    "91723000",   # Anatomical structure
+}
+
 def _extract_keywords_from_text(text: str) -> list:
     """Extract candidate clinical terms from text using regex patterns.
     Returns list of unique matched terms (lowercased, deduplicated)."""
@@ -631,6 +665,10 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
     if "(finding)" in desc_lower or "(disorder)" in desc_lower or "(situation)" in desc_lower:
         return "problems"
 
+    # Inflammation findings should be problems (not anatomy)
+    if any(x in text_lower for x in ["inflamed", "inflammation", "inflam", "colitis", "itis"]):
+        return "problems"
+
     # Default to problems for unclassified medical conditions
     return "problems"
 
@@ -674,14 +712,29 @@ def run_comprehend_medical(text: str) -> dict:
         code = top.get("Code", "")
         if not code or code in seen_codes:
             continue
+
+        # FALSE POSITIVE FILTERING - remove hallucinated/anatomy codes
+        text_val = e.get("Text", "").strip()
+        text_lower = text_val.lower()
+        if text_lower in _SNOMED_FALSE_POSITIVE_TERMS:
+            continue
+        if code in _SNOMED_FALSE_POSITIVE_CODES:
+            continue
+        # Filter anatomy-only descriptions (structure, body part without pathology)
+        description = top.get("Description", "")
+        desc_lower = description.lower()
+        if "(body structure)" in desc_lower or "structure of" in desc_lower:
+            continue
+        if desc_lower.endswith("structure") and "disorder" not in desc_lower:
+            continue
+
         seen_codes.add(code)
 
         score = float(top.get("Score", e.get("Score", 0)))
-        description = top.get("Description", "")
         traits = e.get("Traits", [])
 
         entry = {
-            "text":        e.get("Text", ""),
+            "text":        text_val,
             "category":    e.get("Category", ""),
             "snomed_code": code,
             "description": description,
@@ -1458,6 +1511,30 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
                 if not result["conclusion"]:
                     result["conclusion"] = line
 
+    # ── Extract clinical findings (inflammation, abnormalities) ──────────────────
+    # Look for findings like "inflamed mucosa in the sigmoid and descending colon"
+    CLINICAL_FINDINGS = {
+        r'inflamed mucosa[^.]*': ("128139000", "Inflammatory disorder of intestine (disorder)"),
+        r'inflam(?:ed|mation)[^.]*(?:colon|sigmoid|rectum|bowel)': ("128139000", "Inflammatory disorder of intestine (disorder)"),
+        r'biops(?:y|ies) taken': (None, None),  # Just note, no SNOMED
+        r'(?:no|does not) want banding': (None, None),  # Patient preference
+    }
+
+    for pattern, (snomed_code, snomed_desc) in CLINICAL_FINDINGS.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            finding_text = match.group(0).strip()
+            if snomed_code:
+                result["problems"].append({
+                    "term": finding_text,
+                    "snomed_code": snomed_code,
+                    "snomed_description": snomed_desc
+                })
+            else:
+                # Just a note, add to conclusion if relevant
+                if "biops" in finding_text.lower() and "biops" not in result.get("conclusion", "").lower():
+                    result["conclusion"] = (result.get("conclusion", "") + "; " + finding_text).strip("; ")
+
     # Extract Date of injury for orthopaedic letters
     injury_date_match = re.search(r'Date of injury[:\s]*(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', text, re.IGNORECASE)
     if injury_date_match:
@@ -1536,29 +1613,89 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
                 d, m, y = header_date.groups()
                 result["letter_date"] = f"{d.zfill(2)}/{months_abbr[m.upper()]}/{y}"
 
-    # ── Parse "Investigations Pending at Discharge" section ──────────────────
-    pending_investigations_match = re.search(
-        r'Investigations Pending at Discharge\s*(.*?)(?=\n(?:Unresulted Labs|Outpatient Follow|Actions Required|Allergies|$))',
+    # ── Parse "Investigations Pending at Discharge" and "Specimens" sections ──────────────────
+    # First check for Specimens table format (common in discharge summaries)
+    specimens_section = re.search(
+        r'Specimens\s*(.*?)(?=\n(?:Unresulted|Outpatient|Actions Required|Allergies|Primary Care|$))',
         text, re.IGNORECASE | re.DOTALL
     )
+
+    pending_investigations_match = re.search(
+        r'Investigations Pending at Discharge\s*(.*?)(?=\n(?:Unresulted Labs|Outpatient Follow|Actions Required|Allergies|Specimens|$))',
+        text, re.IGNORECASE | re.DOTALL
+    )
+
+    investigations_text = ""
+    if specimens_section:
+        investigations_text += specimens_section.group(1).strip() + "\n"
     if pending_investigations_match:
-        pending_text = pending_investigations_match.group(1).strip()
-        # Parse HISTOLOGY/lab test rows - look for "Source Type Tests" pattern or "HISTOLOGY" mentions
-        if 'histology' in pending_text.lower():
-            # Extract specimen descriptions
-            specimens = re.findall(r'Description:\s*([^\n]+)', pending_text, re.IGNORECASE)
-            priorities = re.findall(r'Priority[:\s]*(Urgent|Routine)', pending_text, re.IGNORECASE)
+        investigations_text += pending_investigations_match.group(1).strip()
 
-            for i, specimen in enumerate(specimens):
-                priority = priorities[i] if i < len(priorities) else 'Routine'
-                action_text = f"Pending histology: {specimen.strip()} ({priority.lower()})"
-                result["actions_gp_doctor"].append(action_text)
-                result["investigations"].append({"term": f"Histology - {specimen.strip()}", "snomed_code": "117259009"})
+    if investigations_text:
+        # Parse specimen rows - format: Source | Type | Tests | Collected By | Collected At | Priority
+        # Or Description: lines
+        specimen_rows = []
 
-            # If no specific specimens found but HISTOLOGY mentioned
-            if not specimens:
-                result["actions_gp_doctor"].append("Pending histology results - review when available")
-                result["investigations"].append({"term": "Histology tissue examination", "snomed_code": "117259009"})
+        # Pattern 1: Table rows with Source, Type, Tests columns
+        # Example: "Rectum Tissue (Histology) • HISTOLOGY, TISSUE Akram GEORGE HANNA, MD 8/2/26 10:33 Urgent"
+        table_rows = re.findall(
+            r'(\w+)\s+Tissue\s*\(Histolog[y]?\)\s*[•·]?\s*(HISTOLOGY[,\s]*TISSUE)\s+.*?(\d+/\d+/\d+\s+\d+:\d+)\s+(Urgent|Routine)',
+            investigations_text, re.IGNORECASE
+        )
+        for source, test_type, collected_at, priority in table_rows:
+            specimen_rows.append({
+                "source": source.strip(),
+                "test": "Histology",
+                "priority": priority.capitalize(),
+                "collected_at": collected_at
+            })
+
+        # Pattern 2: Description lines
+        descriptions = re.findall(r'Description:\s*([^\n]+)', investigations_text, re.IGNORECASE)
+        priorities = re.findall(r'(?:Priority[:\s]*|^|\s)(Urgent|Routine)(?:\s|$)', investigations_text, re.IGNORECASE)
+
+        for i, desc in enumerate(descriptions):
+            priority = priorities[i] if i < len(priorities) else 'Routine'
+            specimen_rows.append({
+                "source": desc.strip(),
+                "test": "Histology",
+                "priority": priority.capitalize()
+            })
+
+        # Generate investigation entries and GP actions
+        seen_sources = set()
+        for spec in specimen_rows:
+            source = spec.get("source", "Unknown")
+            if source.lower() in seen_sources:
+                continue
+            seen_sources.add(source.lower())
+
+            priority = spec.get("priority", "Routine")
+            priority_label = f" ({priority.upper()})" if priority.lower() == "urgent" else ""
+
+            # Add to investigations with priority
+            result["investigations"].append({
+                "term": f"Histology - {source}",
+                "snomed_code": "117259009",
+                "snomed_description": "Histologic examination, tissue (procedure)",
+                "result": "Pending",
+                "priority": priority
+            })
+
+            # Add to GP actions - urgent histology needs doctor review
+            if priority.lower() == "urgent":
+                result["actions_gp_doctor"].append(f"Review URGENT histology result: {source} - chase if not received")
+            else:
+                result["actions_gp_doctor"].append(f"Review histology result when available: {source}")
+
+        # If HISTOLOGY mentioned but no structured data found
+        if not specimen_rows and 'histology' in investigations_text.lower():
+            result["actions_gp_doctor"].append("Pending histology results - review when available")
+            result["investigations"].append({
+                "term": "Histology tissue examination",
+                "snomed_code": "117259009",
+                "result": "Pending"
+            })
 
     # ── Parse "Post-op Instructions" for patient actions ──────────────────
     postop_match = re.search(
@@ -1572,20 +1709,47 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
             if line and len(line) > 5:
                 result["actions_patient"].append(line)
 
-    # ── Parse procedures from Procedure Information section ──────────────
+    # ── Parse procedures from Procedure Information section AND body text ──────────────
+    # Known surgical/therapeutic procedures with SNOMED codes
+    KNOWN_PROCEDURES = {
+        "flexible sigmoidoscopy": ("44441009", "Flexible fiberoptic sigmoidoscopy (procedure)"),
+        "sigmoidoscopy": ("44441009", "Flexible fiberoptic sigmoidoscopy (procedure)"),
+        "colonoscopy": ("73761001", "Colonoscopy (procedure)"),
+        "phenol injection": ("307589007", "Phenol injection of hemorrhoid (procedure)"),
+        "excision of skin tags": ("177965000", "Excision of lesion of skin (procedure)"),
+        "excision of perianal skin tags": ("177965000", "Excision of lesion of skin (procedure)"),
+        "haemorrhoidectomy": ("30577007", "Hemorrhoidectomy (procedure)"),
+        "banding": ("265737005", "Hemorrhoid banding (procedure)"),
+        "rubber band ligation": ("265737005", "Hemorrhoid banding (procedure)"),
+        "eua": ("386053000", "Examination under anesthesia (procedure)"),
+    }
+
+    # Search document body for procedures
+    proc_found = set()
+    for proc_name, (snomed_code, snomed_desc) in KNOWN_PROCEDURES.items():
+        if proc_name in text.lower():
+            if proc_name not in proc_found:
+                proc_found.add(proc_name)
+                result["treatments"].append({
+                    "term": proc_name.title(),
+                    "snomed_code": snomed_code,
+                    "snomed_description": snomed_desc
+                })
+
+    # Also extract any procedure mentioned in "Procedure(s)" section
     procedure_match = re.search(
-        r'Procedure Information\s*.*?Procedure\(s\)[^:]*:\s*\n?(.*?)(?=\n\s*\n|In partnership|$)',
+        r'Procedure\(s\)\s*(?:\([^)]*\))?[:\s]*\n?(.*?)(?=\n\s*\n|Post-op|In partnership|$)',
         text, re.IGNORECASE | re.DOTALL
     )
     if procedure_match:
         proc_text = procedure_match.group(1).strip()
-        # Also check body text for procedure descriptions
-        body_procs = re.search(r'(flexible sigmoidoscopy|phenol injection|excision[^\n]*|banding[^\n]*)',
-                               text, re.IGNORECASE)
-        if body_procs:
-            for proc in re.findall(r'(flexible sigmoidoscopy|phenol injection[^,.\n]*|excision of[^,.\n]*|banding[^,.\n]*)',
-                                   text, re.IGNORECASE):
-                result["treatments"].append({"term": proc.strip()})
+        # Extract procedures listed in this section
+        for line in proc_text.split('\n'):
+            line = line.strip()
+            if line and len(line) > 3 and line.lower() not in proc_found:
+                # Add if it looks like a procedure (not a date/code)
+                if not re.match(r'^[\d/\-]+$', line) and not line.startswith('Procedure date'):
+                    result["treatments"].append({"term": line})
 
     # ── Parse telephone/follow-up appointments from Post-op section ──────────
     telephone_match = re.search(r'(Telephone appointment[^\n]*)', text, re.IGNORECASE)
@@ -1833,40 +1997,141 @@ def infer_letter_type(text: str) -> str:
 
 
 def extract_icd_codes(text: str) -> list:
-    """Extract ICD-9/10 codes like K64.9, F31.0, F90.0, ICD10 F31.0."""
+    """Extract ICD-10 codes like K64.9, F31.0. Only codes that appear in clinical context.
+
+    ICD-10 chapters: A-B (infections), C-D (neoplasms), E (metabolic), F (mental),
+    G (nervous), H (eye/ear), I (circulatory), J (respiratory), K (digestive),
+    L (skin), M (musculoskeletal), N (genitourinary), O (pregnancy), P (perinatal),
+    Q (congenital), R (symptoms), S-T (injury), V-Y (external causes), Z (factors).
+
+    Filters out false positives like page numbers, reference codes, NHS numbers.
+    """
     import re
-    pattern = r'\b([A-Z]\d{2}(?:\.\d{1,2})?)\b'
-    codes   = list(dict.fromkeys(re.findall(pattern, text)))
-    # filter noise — must start with a valid ICD chapter letter
-    valid_starts = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    return [c for c in codes if c[0] in valid_starts and len(c) >= 3]
+
+    # Valid ICD-10 chapter letters (excludes U which is provisional)
+    VALID_ICD_CHAPTERS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ") - {"U", "X"}  # X is external causes, rarely in letters
+
+    # Codes that are NOT ICD codes but match the pattern (false positives)
+    FALSE_POSITIVE_CODES = {
+        # NHS/document reference patterns
+        "G01", "G02", "G03", "G04", "G05",  # Often page references like "Page G01"
+        "W01", "W02", "W03",  # Ward codes
+        "N01", "N02", "N03",  # Reference numbers
+        # Time patterns that slip through
+        "H00", "H01", "H02", "H03",  # Hour codes
+        # Generic codes
+        "V01", "V02", "V03",  # Version numbers
+    }
+
+    # Look for codes in brackets [K64.9] or after "ICD" mention
+    bracketed_pattern = r'\[([A-Z]\d{2}(?:\.\d{1,2})?)\]'
+    icd_label_pattern = r'ICD[-\s]?10?\s*[:=]?\s*([A-Z]\d{2}(?:\.\d{1,2})?)'
+
+    codes = []
+
+    # First priority: codes in brackets (most reliable)
+    for code in re.findall(bracketed_pattern, text):
+        if code not in FALSE_POSITIVE_CODES and code[0] in VALID_ICD_CHAPTERS:
+            codes.append(code)
+
+    # Second priority: codes after "ICD" label
+    for code in re.findall(icd_label_pattern, text, re.IGNORECASE):
+        if code not in FALSE_POSITIVE_CODES and code[0] in VALID_ICD_CHAPTERS and code not in codes:
+            codes.append(code)
+
+    # Third priority: codes in diagnosis context only
+    diagnosis_context = re.findall(
+        r'(?:diagnosis|diagnos(?:is|es)|condition|presenting complaint)[:\s]*[^.\n]*?([A-Z]\d{2}(?:\.\d{1,2})?)',
+        text, re.IGNORECASE
+    )
+    for code in diagnosis_context:
+        if code not in FALSE_POSITIVE_CODES and code[0] in VALID_ICD_CHAPTERS and code not in codes:
+            codes.append(code)
+
+    return codes[:10]  # Limit to 10 codes
 
 
 def extract_medications(text: str) -> list:
-    """Extract medication lines with dosage patterns."""
+    """Extract medication lines with dosage patterns and medication list entries.
+
+    Handles formats:
+    - "Drug Name Xmg tablet" (standard)
+    - "lansoprazole 15mg gastro-resistant capsule" (discharge summary)
+    - "macrogol compound NPF sugar free oral powder" (compound formulations)
+    - "paracetamol 500mg tablet Take TWO tablets..." (with instructions)
+    """
     import re
-    meds  = []
+    meds = []
     lines = text.split("\n")
-    # Patterns: "Drug Name Xmg/Xml route frequency"
+
+    # Pattern 1: Standard dose pattern "Drug Name Xmg/Xml"
     dose_re = re.compile(
         r'(\b[A-Z][a-zA-Z\s\-]+?)\s+'
-        r'(\d+\.?\d*\s*(?:mg|ml|mcg|iu|g|mg/ml|ml/hr|units?|%|micrograms?)[^\n,;]{0,40})',
+        r'(\d+\.?\d*\s*(?:mg|ml|mcg|iu|g|mg/ml|ml/hr|units?|%|micrograms?)[^\n,;]{0,60})',
         re.IGNORECASE
     )
+
+    # Pattern 2: Medication list format (drug name bold followed by formulation)
+    # Matches: "lansoprazole 15mg gastro-resistant capsule"
+    med_list_re = re.compile(
+        r'^([a-z][a-z\s\-]+(?:\s+compound\s+NPF)?)\s+'  # drug name (may include "compound NPF")
+        r'(\d+\.?\d*\s*(?:mg|ml|mcg|g|%)?\s*'  # dose
+        r'(?:gastro-resistant\s+)?(?:sugar\s+free\s+)?(?:oral\s+)?'  # modifiers
+        r'(?:capsule|tablet|powder|liquid|solution|sachet|injection|cream|gel|ointment|inhaler|spray|patch|drops?|suspension|syrup)[s]?)',
+        re.IGNORECASE
+    )
+
+    # Pattern 3: NPF compound medications (UK specific)
+    npf_re = re.compile(
+        r'([a-z][a-z\s\-]+\s+compound\s+NPF)\s+'
+        r'((?:sugar\s+free\s+)?(?:oral\s+)?(?:powder|liquid|solution|sachets?))',
+        re.IGNORECASE
+    )
+
+    # Track medication section
+    in_medication_section = False
+
     for line in lines:
         line = line.strip()
-        if not line or len(line) < 8:
+        if not line or len(line) < 5:
             continue
+
+        # Detect medication section headers
+        ll = line.lower()
+        if "medication list" in ll or "continue taking" in ll or "your medication" in ll:
+            in_medication_section = True
+            continue
+
+        # Pattern 1: Standard dose pattern
         m = dose_re.search(line)
         if m:
             name = m.group(1).strip().rstrip('-– ')
             dose = m.group(2).strip()
             if 3 < len(name) < 60:
                 meds.append({"name": name, "dose": dose, "raw": line.strip()})
-    # deduplicate by name
+                continue
+
+        # Pattern 2: Medication list format (in medication sections)
+        if in_medication_section:
+            m2 = med_list_re.match(line)
+            if m2:
+                name = m2.group(1).strip()
+                dose = m2.group(2).strip()
+                meds.append({"name": name, "dose": dose, "raw": line.strip()})
+                continue
+
+            # Pattern 3: NPF compounds
+            m3 = npf_re.search(line)
+            if m3:
+                name = m3.group(1).strip()
+                dose = m3.group(2).strip()
+                meds.append({"name": name, "dose": dose, "raw": line.strip()})
+                continue
+
+    # Deduplicate by normalized name
     seen, out = set(), []
     for med in meds:
-        key = med["name"].lower()
+        key = med["name"].lower().replace("-", " ").strip()
         if key not in seen:
             seen.add(key)
             out.append(med)
