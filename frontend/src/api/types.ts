@@ -134,6 +134,41 @@ export interface InvestigationItem {
   snomed_code?: string;
 }
 
+// Medical NER Entity (17 categories)
+export interface NEREntity {
+  text: string;
+  category: string;
+  confidence: number;
+  start_pos: number;
+  end_pos: number;
+  section?: string;
+  normalized_text?: string;
+  attributes?: Record<string, string | number>;
+  evidence?: string;
+}
+
+// Medical NER Results (17 distinct categories)
+export interface MedicalNERResult {
+  diagnoses: NEREntity[];
+  symptoms: NEREntity[];
+  signs: NEREntity[];
+  investigations: NEREntity[];
+  procedures: NEREntity[];
+  medications: NEREntity[];
+  allergies: NEREntity[];
+  social_history: NEREntity[];
+  past_medical_history: NEREntity[];
+  family_history: NEREntity[];
+  discharge_advice: NEREntity[];
+  follow_up_plan: NEREntity[];
+  gp_actions: NEREntity[];
+  hospital_actions: NEREntity[];
+  referrals: NEREntity[];
+  clinical_scores: NEREntity[];
+  vital_signs: NEREntity[];
+  stats: Record<string, number>;
+}
+
 export interface ProcessResult {
   doc_id: string;
   filename: string;
@@ -178,6 +213,9 @@ export interface ProcessResult {
   diary_events?: DiaryEvent[];
   treatments?: TreatmentItem[];
   investigations?: InvestigationItem[];
+
+  // Medical NER (17 categories)
+  medical_ner?: MedicalNERResult;
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';

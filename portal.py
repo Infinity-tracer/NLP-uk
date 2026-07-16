@@ -151,6 +151,13 @@ try:
 except ImportError:
     _HAS_OCR_NORMALIZER = False
 
+# Medical NER: 17-category entity extraction
+try:
+    from medical_ner import MedicalNER, extract_medical_entities, EntityCategory as NERCategory
+    _HAS_MEDICAL_NER = True
+except ImportError:
+    _HAS_MEDICAL_NER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -3038,6 +3045,30 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "note": "hipaa_compliance module unavailable — PHI detection bypassed",
         }
 
+    # ── Medical NER: 17-category entity extraction ─────────────────────────────
+    # Extract entities into distinct categories with no overlap
+    ner_result = None
+    if _HAS_MEDICAL_NER:
+        try:
+            ner = MedicalNER()
+            ner_result = ner.extract(doc_text)
+            result["pipeline_stages"]["medical_ner"] = {
+                "status": "done",
+                "total_entities": ner_result.extraction_stats.get("total", 0),
+                "categories_found": sum(1 for v in ner_result.extraction_stats.values() if v > 0 and v != ner_result.extraction_stats.get("total")),
+            }
+            import sys
+            print(f"[DEBUG] Medical NER: {ner_result.extraction_stats}", file=sys.stderr)
+        except Exception as e:
+            result["pipeline_stages"]["medical_ner"] = {"status": "partial", "error": str(e)}
+            import sys
+            print(f"[WARN] Medical NER failed: {e}", file=sys.stderr)
+    else:
+        result["pipeline_stages"]["medical_ner"] = {
+            "status": "skipped",
+            "note": "medical_ner module unavailable",
+        }
+
     # Enrich with local ICD + medication extraction (works without AWS)
     icd_codes   = extract_icd_codes(doc_text)
     medications = extract_medications(doc_text)
@@ -3205,6 +3236,30 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
 
     # HIPAA audit trail (SRS §5.2, §6.2): surface PHI count for compliance logging
     result["phi_entity_count"]   = len(phi_entities)
+
+    # ── Medical NER results (17 categories) ──────────────────────────────────────
+    # Add structured NER output to result
+    if ner_result:
+        result["medical_ner"] = {
+            "diagnoses": [e.to_dict() for e in ner_result.by_category.get("diagnosis", [])],
+            "symptoms": [e.to_dict() for e in ner_result.by_category.get("symptom", [])],
+            "signs": [e.to_dict() for e in ner_result.by_category.get("sign", [])],
+            "investigations": [e.to_dict() for e in ner_result.by_category.get("investigation", [])],
+            "procedures": [e.to_dict() for e in ner_result.by_category.get("procedure", [])],
+            "medications": [e.to_dict() for e in ner_result.by_category.get("medication", [])],
+            "allergies": [e.to_dict() for e in ner_result.by_category.get("allergy", [])],
+            "social_history": [e.to_dict() for e in ner_result.by_category.get("social_history", [])],
+            "past_medical_history": [e.to_dict() for e in ner_result.by_category.get("past_medical_history", [])],
+            "family_history": [e.to_dict() for e in ner_result.by_category.get("family_history", [])],
+            "discharge_advice": [e.to_dict() for e in ner_result.by_category.get("discharge_advice", [])],
+            "follow_up_plan": [e.to_dict() for e in ner_result.by_category.get("follow_up_plan", [])],
+            "gp_actions": [e.to_dict() for e in ner_result.by_category.get("gp_action", [])],
+            "hospital_actions": [e.to_dict() for e in ner_result.by_category.get("hospital_action", [])],
+            "referrals": [e.to_dict() for e in ner_result.by_category.get("referral", [])],
+            "clinical_scores": [e.to_dict() for e in ner_result.by_category.get("clinical_score", [])],
+            "vital_signs": [e.to_dict() for e in ner_result.by_category.get("vital_sign", [])],
+            "stats": ner_result.extraction_stats,
+        }
 
     # ── Clinical Validation Stage ────────────────────────────────────────────────
     # Final validation to catch consistency issues and improve accuracy
