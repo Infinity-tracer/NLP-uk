@@ -1571,6 +1571,156 @@ def compute_unified_confidence(
     return (0.40 * textract_conf) + (0.20 * snomed_conf) + (0.40 * llm_conf)
 
 
+# ── Confidence Scoring System ─────────────────────────────────────────────────
+# Default entity confidence threshold (40%) - entities below this are hidden
+DEFAULT_ENTITY_THRESHOLD = 0.40
+
+# Minimum displayable confidence - entities at or below 1% are never shown
+MIN_DISPLAYABLE_CONFIDENCE = 0.02
+
+# Weights for overall confidence computation
+CONFIDENCE_WEIGHTS = {
+    "ocr": 0.20,           # OCR/text extraction quality
+    "ner": 0.15,           # Named entity recognition
+    "snomed": 0.20,        # SNOMED coding accuracy
+    "medication": 0.10,    # Medication extraction
+    "investigation": 0.10, # Investigation parsing
+    "summary": 0.15,       # Summary generation
+    "classification": 0.10 # Document type classification
+}
+
+
+def compute_component_confidences(
+    textract_conf: float,
+    snomed_data: dict,
+    summaries: dict,
+    letter_type: str,
+    medications: list,
+    investigations: list,
+    ner_data: dict | None = None,
+) -> dict:
+    """Compute separate confidence scores for each pipeline component.
+
+    Returns dict with:
+    - ocr: OCR/text extraction confidence
+    - ner: Named entity recognition confidence
+    - snomed: SNOMED mapping confidence
+    - medication: Medication extraction confidence
+    - investigation: Investigation parsing confidence
+    - summary: Summary generation confidence
+    - classification: Document type classification confidence
+    - overall: Weighted overall confidence
+    - threshold: Current entity threshold
+    """
+    # OCR confidence from Textract
+    ocr_conf = textract_conf if textract_conf > 0 else 0.5
+
+    # NER confidence - average of entity confidences or default
+    ner_entities = []
+    if ner_data:
+        for category in ["diagnoses", "symptoms", "signs", "procedures", "medications"]:
+            ner_entities.extend(ner_data.get(category, []))
+    if ner_entities:
+        ner_conf = sum(e.get("confidence", 0.5) for e in ner_entities) / len(ner_entities)
+    else:
+        ner_conf = 0.5
+
+    # SNOMED confidence from mapping results
+    snomed_conf = snomed_data.get("snomed_confidence", 0.5)
+
+    # Medication confidence - average of medication confidences
+    if medications:
+        med_confs = [m.get("confidence", 0.5) if isinstance(m, dict) else 0.5 for m in medications]
+        med_conf = sum(med_confs) / len(med_confs) if med_confs else 0.5
+    else:
+        med_conf = 0.5  # No medications found - neutral confidence
+
+    # Investigation confidence - average of investigation confidences
+    if investigations:
+        inv_confs = [i.get("confidence", 0.5) if isinstance(i, dict) else 0.5 for i in investigations]
+        inv_conf = sum(inv_confs) / len(inv_confs) if inv_confs else 0.5
+    else:
+        inv_conf = 0.5  # No investigations found - neutral confidence
+
+    # Summary confidence from LLM
+    summary_conf = summaries.get("llm_confidence", 0.8)
+
+    # Classification confidence - based on letter type detection
+    # Higher confidence for well-defined types, lower for generic/unknown
+    classification_conf = 0.9 if letter_type and letter_type not in ("Unknown", "Other", "") else 0.5
+
+    # Compute weighted overall confidence
+    overall = (
+        CONFIDENCE_WEIGHTS["ocr"] * ocr_conf +
+        CONFIDENCE_WEIGHTS["ner"] * ner_conf +
+        CONFIDENCE_WEIGHTS["snomed"] * snomed_conf +
+        CONFIDENCE_WEIGHTS["medication"] * med_conf +
+        CONFIDENCE_WEIGHTS["investigation"] * inv_conf +
+        CONFIDENCE_WEIGHTS["summary"] * summary_conf +
+        CONFIDENCE_WEIGHTS["classification"] * classification_conf
+    )
+
+    return {
+        "ocr": round(ocr_conf, 3),
+        "ner": round(ner_conf, 3),
+        "snomed": round(snomed_conf, 3),
+        "medication": round(med_conf, 3),
+        "investigation": round(inv_conf, 3),
+        "summary": round(summary_conf, 3),
+        "classification": round(classification_conf, 3),
+        "overall": round(overall, 3),
+        "threshold": DEFAULT_ENTITY_THRESHOLD,
+        "weights": CONFIDENCE_WEIGHTS,
+    }
+
+
+def filter_low_confidence_entities(
+    entities: list,
+    threshold: float = DEFAULT_ENTITY_THRESHOLD,
+    confidence_key: str = "confidence"
+) -> list:
+    """Filter out entities below confidence threshold.
+
+    - Removes entities with confidence < threshold (default 40%)
+    - Always removes entities with confidence <= 1% (MIN_DISPLAYABLE_CONFIDENCE)
+
+    Returns filtered list of entities.
+    """
+    if not entities:
+        return []
+
+    filtered = []
+    for entity in entities:
+        if isinstance(entity, dict):
+            conf = entity.get(confidence_key, 0)
+            # Skip if below minimum displayable (1%)
+            if conf <= MIN_DISPLAYABLE_CONFIDENCE:
+                continue
+            # Skip if below threshold (default 40%)
+            if conf < threshold:
+                continue
+            filtered.append(entity)
+        else:
+            # Non-dict entities pass through
+            filtered.append(entity)
+
+    return filtered
+
+
+def filter_snomed_data(snomed_data: dict, threshold: float = DEFAULT_ENTITY_THRESHOLD) -> dict:
+    """Filter all SNOMED entity lists by confidence threshold.
+
+    Returns new dict with filtered entity lists.
+    """
+    filtered = dict(snomed_data)  # Shallow copy
+
+    for key in ["problems", "treatments", "medications", "investigations", "diagnoses", "all_entities", "negated_entities"]:
+        if key in filtered and isinstance(filtered[key], list):
+            filtered[key] = filter_low_confidence_entities(filtered[key], threshold)
+
+    return filtered
+
+
 def get_confidence_threshold(letter_type: str) -> float:
     """OBS-004: Return per-type confidence threshold from config/document_type_config.py.
     Single source of truth — thresholds are not duplicated here.
@@ -3465,12 +3615,31 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         result["pipeline_stages"]["track_a"]["note"] = "No diagnosis-focused SNOMED concepts detected from document text"
 
     # ── Confidence aggregation ─────────────────────────────────────────────────
-    unified    = compute_unified_confidence(textract_conf, snomed["snomed_confidence"], summaries["llm_confidence"], letter_type)
+    # Compute per-component confidence scores
+    component_confidences = compute_component_confidences(
+        textract_conf=textract_conf,
+        snomed_data=snomed,
+        summaries=summaries,
+        letter_type=letter_type,
+        medications=medications,
+        investigations=comprehensive.get("investigations", []),
+        ner_data=medical_ner if _HAS_MEDICAL_NER else None,
+    )
+
+    # Legacy unified confidence for backward compatibility
+    unified = compute_unified_confidence(textract_conf, snomed["snomed_confidence"], summaries["llm_confidence"], letter_type)
     # OBS-004: Use per-type threshold — ambulance/ophthalmology referral docs legitimately score lower
     type_threshold = get_confidence_threshold(letter_type)
+
     result["unified_confidence"]   = round(unified, 3)
     result["confidence_threshold"] = type_threshold
     result["requires_review"]      = unified < type_threshold
+
+    # New component-based confidence scores
+    result["confidence_scores"] = component_confidences
+
+    # Filter low-confidence entities (below 40% threshold, and always remove <=1%)
+    snomed = filter_snomed_data(snomed, DEFAULT_ENTITY_THRESHOLD)
 
     # ── OBS-008: Identify originating hospital trust ──────────────────────────
     hospital_trust = extract_hospital_trust(doc_text)
@@ -3561,9 +3730,9 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     result["phi_entity_count"]   = len(phi_entities)
 
     # ── Medical NER results (17 categories) ──────────────────────────────────────
-    # Add structured NER output to result
+    # Add structured NER output to result (filtered by confidence threshold)
     if ner_result:
-        result["medical_ner"] = {
+        raw_ner = {
             "diagnoses": [e.to_dict() for e in ner_result.by_category.get("diagnosis", [])],
             "symptoms": [e.to_dict() for e in ner_result.by_category.get("symptom", [])],
             "signs": [e.to_dict() for e in ner_result.by_category.get("sign", [])],
@@ -3583,6 +3752,11 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "vital_signs": [e.to_dict() for e in ner_result.by_category.get("vital_sign", [])],
             "stats": ner_result.extraction_stats,
         }
+        # Filter each NER category by confidence threshold (40% default, always hide <=1%)
+        for key in raw_ner:
+            if key != "stats" and isinstance(raw_ner[key], list):
+                raw_ner[key] = filter_low_confidence_entities(raw_ner[key], DEFAULT_ENTITY_THRESHOLD)
+        result["medical_ner"] = raw_ner
 
     # ── Abbreviation data in result ──────────────────────────────────────────────
     # Store both original abbreviations and their expansions

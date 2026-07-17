@@ -409,6 +409,28 @@ export interface PipelineStages {
   hipaa?: PipelineStage;
 }
 
+// Component-based confidence scores
+export interface ConfidenceScores {
+  ocr: number;            // OCR/text extraction quality (0-1)
+  ner: number;            // Named entity recognition (0-1)
+  snomed: number;         // SNOMED coding accuracy (0-1)
+  medication: number;     // Medication extraction (0-1)
+  investigation: number;  // Investigation parsing (0-1)
+  summary: number;        // Summary generation (0-1)
+  classification: number; // Document type classification (0-1)
+  overall: number;        // Weighted overall confidence (0-1)
+  threshold: number;      // Current entity filter threshold (default 0.40)
+  weights: {
+    ocr: number;
+    ner: number;
+    snomed: number;
+    medication: number;
+    investigation: number;
+    summary: number;
+    classification: number;
+  };
+}
+
 export interface ClinicalSpecifics {
   [key: string]: string | number | Record<string, string | number>;
 }
@@ -502,6 +524,9 @@ export interface ProcessResult {
   unified_confidence: number;
   confidence_threshold: number;
   requires_review: boolean;
+
+  // Component-based confidence scores
+  confidence_scores?: ConfidenceScores;
 
   letter_type: string;
   hospital_trust: string;
