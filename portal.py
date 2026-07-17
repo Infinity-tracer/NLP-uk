@@ -816,8 +816,9 @@ def run_comprehend_medical(text: str) -> dict:
     seen_codes = set()
 
     # ── Primary: InferSNOMEDCT for SNOMED codes ──
+    # AWS Comprehend Medical has a 5000 character limit for InferSNOMEDCT
     try:
-        resp = client.infer_snomedct(Text=text[:10000])
+        resp = client.infer_snomedct(Text=text[:5000])
         snomed_entities = resp.get("Entities", [])
     except Exception as e:
         import sys
@@ -1283,9 +1284,21 @@ Extracted clinical entities:
         })
         resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
         resp_body = json.loads(resp["body"].read())
-        # Handle different response formats
+        # Handle different response formats - Claude Sonnet 5 may return thinking blocks
+        raw = ""
         if "content" in resp_body and resp_body["content"]:
-            raw = resp_body["content"][0].get("text", "").strip()
+            for content_item in resp_body["content"]:
+                if isinstance(content_item, dict):
+                    # Skip thinking blocks - look for text blocks
+                    if content_item.get("type") == "thinking":
+                        continue
+                    if content_item.get("type") == "text" or "text" in content_item:
+                        raw = content_item.get("text", "").strip()
+                        if raw:
+                            break
+                elif isinstance(content_item, str):
+                    raw = content_item.strip()
+                    break
         elif "completion" in resp_body:
             raw = resp_body["completion"].strip()
         else:
@@ -1694,18 +1707,27 @@ Output ONLY the JSON object, nothing else."""
         print(f"[DEBUG] resp_body keys: {list(resp_body.keys())}", file=sys.stderr)
 
         # Handle different response formats (same as call_claude)
+        # Claude Sonnet 5 may return thinking blocks before text blocks
         if "content" in resp_body and resp_body["content"]:
-            content_item = resp_body["content"][0]
-            print(f"[DEBUG] content[0] type: {type(content_item)}, keys: {list(content_item.keys()) if isinstance(content_item, dict) else 'N/A'}", file=sys.stderr)
-            print(f"[DEBUG] content[0] value: {str(content_item)[:300]}", file=sys.stderr)
-            # Try different keys for the text content
-            if isinstance(content_item, dict):
-                raw = content_item.get("text", "") or content_item.get("value", "") or content_item.get("content", "")
-            elif isinstance(content_item, str):
-                raw = content_item
-            else:
-                raw = str(content_item)
+            raw = ""
+            for idx, content_item in enumerate(resp_body["content"]):
+                print(f"[DEBUG] content[{idx}] type: {type(content_item)}, keys: {list(content_item.keys()) if isinstance(content_item, dict) else 'N/A'}", file=sys.stderr)
+                if isinstance(content_item, dict):
+                    # Skip thinking blocks - look for text blocks
+                    if content_item.get("type") == "thinking":
+                        continue
+                    # Extract text from text blocks
+                    if content_item.get("type") == "text" or "text" in content_item:
+                        text_content = content_item.get("text", "") or content_item.get("value", "") or content_item.get("content", "")
+                        if text_content:
+                            raw = text_content
+                            break
+                elif isinstance(content_item, str):
+                    raw = content_item
+                    break
             raw = raw.strip()
+            if not raw:
+                print(f"[DEBUG] No text content found in {len(resp_body['content'])} content blocks", file=sys.stderr)
         elif "completion" in resp_body:
             raw = resp_body["completion"].strip()
         else:
