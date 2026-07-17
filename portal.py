@@ -1364,26 +1364,22 @@ Extracted clinical entities:
     def call_claude(prompt: str, max_tokens: int = 200) -> str:
         # Explicit bullet-point instruction for structured output
         system_instruction = (
-            "You are a clinical documentation assistant writing structured NHS GP-handover summaries. "
-            "STRICT RULES: "
-            "1. Output EXACTLY 5-6 bullet points using • character. Each bullet on a new line. "
-            "2. Each bullet should be ONE short sentence (max 15 words). "
-            "3. Use clinical shorthand: abbreviate freely (T1DM, PRP, HTN, OD, BD, Hb, BP, SpO2, GCS etc.). "
-            "4. PRIORITY ORDER for bullets: "
-            "   • Diagnosis or main finding "
-            "   • Procedure/treatment performed "
-            "   • Key investigation result "
-            "   • Medication change or new prescription "
-            "   • Follow-up action required "
-            "5. ONLY include information from THIS current episode - exclude all historical PMH. "
-            "6. NO HALLUCINATION - only include values, dates, names that appear VERBATIM in the source text. "
-            "7. Do NOT include patient demographics, age, DOB, NHS number in bullets. "
-            "Example output:\n"
-            "• Dx: Haemorrhoids confirmed on flexible sigmoidoscopy\n"
-            "• Procedure: EUA with excision of anal skin tags performed\n"
-            "• Histology: Rectal biopsies taken, results pending\n"
-            "• Rx: Continue lansoprazole 15mg OD\n"
-            "• F/U: Histology results to GP within 2 weeks"
+            "You are a clinical documentation assistant. Output ONLY 4 bullet points, no more.\n\n"
+            "FORMAT REQUIREMENTS:\n"
+            "- Start each line with a dash and space: '- '\n"
+            "- Each bullet on its OWN LINE (press Enter after each)\n"
+            "- Max 12 words per bullet\n"
+            "- NO paragraphs, NO prose, ONLY 4 bullets\n\n"
+            "CONTENT (pick 4 most important):\n"
+            "- Dx: Main diagnosis/finding\n"
+            "- Procedure: What was done\n"
+            "- Rx: Medications with dose\n"
+            "- F/U: Follow-up plan\n\n"
+            "EXAMPLE OUTPUT:\n"
+            "- Dx: Pseudophakia left eye, post cataract surgery\n"
+            "- Procedure: Phacoemulsification with lens insertion, left eye\n"
+            "- Rx: Tobradex eye drops QDS 14 days then BD 14 days\n"
+            "- F/U: No outpatient referrals required"
         )
         clean_prompt = system_instruction + "\n\n" + prompt
         body = json.dumps({
@@ -1440,23 +1436,20 @@ Extracted clinical entities:
         "Do NOT include patient identifiers: name, DOB/date of birth, NHS number, address, or hospital number."
     )
 
-    # Base structured prompt - bullet point format
+    # Base structured prompt - bullet point format (max 4 bullets)
     structured_prompt = (
         f"{context}\n\n"
-        "Write EXACTLY 5-6 bullet points summarizing THIS EPISODE ONLY.\n\n"
-        "FORMAT: Use • character for each bullet, one per line.\n\n"
-        "PRIORITY (include in this order, skip if no data):\n"
-        "• Dx: Diagnosis or main finding\n"
-        "• Procedure: What was done\n"
-        "• Ix: Investigation results with values\n"
-        "• Rx: Medications with doses\n"
-        "• Advice: Key instructions\n"
-        "• F/U: Follow-up plan\n\n"
-        "RULES:\n"
-        "- Each bullet = ONE short sentence (max 15 words)\n"
-        "- CURRENT EPISODE ONLY - exclude all past medical history\n"
-        "- ONLY include information EXPLICITLY in the document\n"
-        "- Use abbreviations: Dx, Ix, Rx, F/U, OD, BD, TDS, etc."
+        "Write EXACTLY 4 bullet points summarizing THIS EPISODE ONLY.\n\n"
+        "FORMAT:\n"
+        "- Start each line with dash and space: '- '\n"
+        "- Each bullet on its OWN LINE\n"
+        "- Max 12 words per bullet\n\n"
+        "PICK THE 4 MOST IMPORTANT FROM:\n"
+        "- Dx: Main diagnosis/finding\n"
+        "- Procedure: What was done\n"
+        "- Rx: Medications with dose\n"
+        "- F/U: Follow-up plan\n\n"
+        "CURRENT EPISODE ONLY - no past history."
         + demo_guard
     )
 
@@ -7207,8 +7200,8 @@ function mdToHtml(text) {
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     // Numbered list items: "1. text" or "1) text"
     .replace(/^\d+[\.\)]\s+(.+)$/gm, '<li style="margin:3px 0">$1</li>')
-    // Bullet list items: "- text" or "* text"
-    .replace(/^[\-\u2022]\s+(.+)$/gm, '<li style="margin:3px 0">$1</li>')
+    // Bullet list items: "- text" or "* text" or "\u2022 text"
+    .replace(/^[\-\*\u2022]\s*(.+)$/gm, '<li style="margin:3px 0">$1</li>')
     // Wrap consecutive <li> blocks in <ul>
     .replace(/(<li[^>]*>[\s\S]*?<\/li>\n?)+/g, m => '<ul style="margin:6px 0 6px 16px;padding:0;list-style:disc">' + m + '</ul>')
     // Double newline → paragraph break
