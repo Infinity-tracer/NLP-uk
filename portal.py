@@ -248,6 +248,13 @@ try:
 except ImportError:
     _HAS_SECTION_PARSER = False
 
+# NHS Document Parser - document type detection and type-specific extraction
+try:
+    from nhs_document_parser import NHSDocumentParser, parse_nhs_document, NHSDocumentType
+    _HAS_NHS_PARSER = True
+except ImportError:
+    _HAS_NHS_PARSER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -4202,6 +4209,49 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     # ── Document type classification (needed before Track B for type-specific prompts) ──
     letter_type   = infer_letter_type(doc_text)
 
+    # ── NHS Document Parser - type-specific extraction ──────────────────────────
+    nhs_parsed = None
+    if _HAS_NHS_PARSER:
+        try:
+            nhs_parser = NHSDocumentParser()
+            nhs_parsed = nhs_parser.parse(doc_text)
+            result["pipeline_stages"]["nhs_parser"] = {
+                "status": "done",
+                "document_type": nhs_parsed.get("document_type_name", "Unknown"),
+                "confidence": nhs_parsed.get("document_type_confidence", 0),
+                "sections_extracted": len(nhs_parsed.get("sections", [])),
+            }
+            # Use NHS parser document type if confidence is higher
+            if nhs_parsed.get("document_type_confidence", 0) > 0.6:
+                nhs_type_name = nhs_parsed.get("document_type_name", "")
+                # Map NHS parser types to existing letter types where applicable
+                nhs_to_letter_type = {
+                    "Ed Discharge": "ED Discharge Letter",
+                    "Discharge Summary": "Discharge Summary",
+                    "Mental Health": "Mental Health Inpatient Discharge",
+                    "Radiology": "Radiology Report",
+                    "Histopathology": "Histopathology Report",
+                    "Operative Notes": "Operative Report",
+                    "Clinic Letter": "Clinic Letter",
+                    "Referral Letter": "Referral Letter",
+                    "Gp Letter": "GP Letter",
+                }
+                mapped_type = nhs_to_letter_type.get(nhs_type_name)
+                if mapped_type and letter_type in ("Unknown", ""):
+                    letter_type = mapped_type
+        except Exception as e:
+            result["pipeline_stages"]["nhs_parser"] = {
+                "status": "partial",
+                "error": str(e),
+            }
+            import sys
+            print(f"[WARN] NHS Document Parser failed: {e}", file=sys.stderr)
+    else:
+        result["pipeline_stages"]["nhs_parser"] = {
+            "status": "skipped",
+            "note": "nhs_document_parser module unavailable",
+        }
+
     # ── Comprehensive Extraction (Claude Sonnet 5) ──────────────────────────────
     # Extract all structured fields in one call for maximum accuracy
     try:
@@ -4482,6 +4532,10 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
         )
         confidence_breakdown.compute_overall()
         result["confidence_breakdown"] = confidence_breakdown.to_dict()
+
+    # ── Add NHS parser results to output ────────────────────────────────────────
+    if nhs_parsed:
+        result["nhs_document_data"] = nhs_parsed
 
     return result
 

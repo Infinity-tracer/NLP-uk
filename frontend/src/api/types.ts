@@ -586,6 +586,115 @@ export interface ProcessResult {
 
   // Section-parsed document structure
   parsed_document?: ParsedDocument;
+
+  // NHS Document Parser - type-specific extraction
+  nhs_document_data?: NHSDocumentData;
+}
+
+// NHS Document types
+export type NHSDocumentTypeEnum =
+  | 'ed_discharge'
+  | 'clinic_letter'
+  | 'radiology'
+  | 'histopathology'
+  | 'operative_notes'
+  | 'referral_letter'
+  | 'gp_letter'
+  | 'mental_health'
+  | 'discharge_summary'
+  | 'unknown';
+
+// Extracted section from NHS document
+export interface NHSExtractedSection {
+  name: string;
+  content: string;
+  confidence: number;
+}
+
+// ED Discharge specific data
+export interface EDDischargeData {
+  triage_category?: string;
+  arrival_time?: string;
+  departure_time?: string;
+  presenting_complaint?: string;
+  ed_diagnosis?: string;
+  disposition?: string;
+}
+
+// Radiology specific data
+export interface RadiologyData {
+  examination_type?: string;
+  clinical_indication?: string;
+  technique?: string;
+  findings?: string;
+  impression?: string;
+  comparison?: string;
+}
+
+// Histopathology specific data
+export interface HistopathologyData {
+  specimen_type?: string;
+  specimen_site?: string;
+  macroscopy?: string;
+  microscopy?: string;
+  diagnosis?: string;
+  grade?: string;
+  stage?: string;
+  margins?: string;
+}
+
+// Operative notes specific data
+export interface OperativeData {
+  operation_name?: string;
+  surgeon?: string;
+  anaesthetist?: string;
+  anaesthesia_type?: string;
+  indication?: string;
+  operative_findings?: string;
+  procedure_details?: string;
+  blood_loss?: string;
+  complications?: string;
+  post_op_instructions?: string;
+}
+
+// Mental health specific data
+export interface MentalHealthData {
+  mental_state?: string;
+  risk_assessment?: string;
+  mha_status?: string;
+  capacity_assessment?: string;
+  care_plan?: string;
+}
+
+// Discharge summary specific data
+export interface DischargeSummaryData {
+  admission_date?: string;
+  discharge_date?: string;
+  admission_reason?: string;
+  inpatient_course?: string;
+  discharge_diagnosis?: string;
+  discharge_medications?: string[];
+  follow_up_plan?: string;
+  gp_actions?: string[];
+}
+
+// NHS Document parsed data
+export interface NHSDocumentData {
+  document_type: NHSDocumentTypeEnum;
+  document_type_name: string;
+  document_type_confidence: number;
+  date?: string;
+  author?: string;
+  recipient?: string;
+  signals_matched: string[];
+  sections: NHSExtractedSection[];
+  // Type-specific data (only one will be present based on document_type)
+  ed_specific?: EDDischargeData;
+  radiology_specific?: RadiologyData;
+  histopathology_specific?: HistopathologyData;
+  operative_specific?: OperativeData;
+  mental_health_specific?: MentalHealthData;
+  discharge_specific?: DischargeSummaryData;
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
