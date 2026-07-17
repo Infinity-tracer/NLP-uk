@@ -791,8 +791,12 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
     # Symptoms/findings go to problems
     if "SYMPTOM" in trait_names or "SIGN" in trait_names:
         return "problems"
-    if "(finding)" in desc_lower or "(disorder)" in desc_lower or "(situation)" in desc_lower:
+    if "(finding)" in desc_lower or "(situation)" in desc_lower:
         return "problems"
+
+    # Disorders are DIAGNOSES (clinical conditions with established diagnosis)
+    if "(disorder)" in desc_lower:
+        return "diagnoses"
 
     # Inflammation findings should be problems (not anatomy)
     if any(x in text_lower for x in ["inflamed", "inflammation", "inflam", "colitis", "itis"]):
@@ -858,9 +862,17 @@ def run_comprehend_medical(text: str) -> dict:
         if desc_lower.endswith("structure") and "disorder" not in desc_lower:
             continue
 
+        # Filter low confidence mappings (below 25%)
+        score = float(top.get("Score", e.get("Score", 0)))
+        if score < 0.25:
+            continue
+
+        # Filter specimen/sample entities - these are not clinical findings
+        if "(specimen)" in desc_lower:
+            continue
+
         seen_codes.add(code)
 
-        score = float(top.get("Score", e.get("Score", 0)))
         traits = e.get("Traits", [])
 
         entry = {
@@ -897,6 +909,9 @@ def run_comprehend_medical(text: str) -> dict:
     except Exception:
         v2_entities = []
 
+    # Track medication names already found to avoid duplicates
+    seen_med_names = {m.get("text", "").lower() for m in medications}
+
     for e in v2_entities:
         entity_type = e.get("Type", "").upper()
         category = e.get("Category", "").upper()
@@ -907,31 +922,69 @@ def run_comprehend_medical(text: str) -> dict:
 
         # Only process medication entities not already captured
         if category == "MEDICATION" or entity_type in ("GENERIC_NAME", "BRAND_NAME"):
+            # Skip if already have this medication
+            if text_val.lower() in seen_med_names:
+                continue
+            seen_med_names.add(text_val.lower())
+
             # Try to get SNOMED code for this medication
+            snomed_code = None
+            snomed_desc = ""
+            snomed_conf = 0.5
+
             try:
+                # First try exact medication name
                 med_resp = client.infer_snomedct(Text=text_val)
                 med_entities = med_resp.get("Entities", [])
                 if med_entities:
                     med_concepts = med_entities[0].get("SNOMEDCTConcepts", [])
                     if med_concepts:
-                        top_med = max(med_concepts, key=lambda c: c.get("Score", 0))
-                        code = top_med.get("Code", "")
-                        if code and code not in seen_codes:
-                            seen_codes.add(code)
-                            entry = {
-                                "text":        text_val,
-                                "category":    "MEDICATION",
-                                "snomed_code": code,
-                                "description": top_med.get("Description", ""),
-                                "confidence":  round(float(top_med.get("Score", e.get("Score", 0.7))), 3),
-                                "entity_id":   str(uuid.uuid4())[:8],
-                                "source":      "comprehend_medication",
-                                "clinical_category": "medications",
-                            }
-                            medications.append(entry)
-                            all_entities.append(entry)
+                        # Find product/substance concept (not procedure)
+                        for mc in sorted(med_concepts, key=lambda c: c.get("Score", 0), reverse=True):
+                            desc = mc.get("Description", "").lower()
+                            if "(product)" in desc or "(substance)" in desc or "medication" in desc:
+                                snomed_code = mc.get("Code", "")
+                                snomed_desc = mc.get("Description", "")
+                                snomed_conf = mc.get("Score", 0.5)
+                                break
+                        # Fallback to top concept if no product/substance found
+                        if not snomed_code and med_concepts:
+                            top_med = max(med_concepts, key=lambda c: c.get("Score", 0))
+                            snomed_code = top_med.get("Code", "")
+                            snomed_desc = top_med.get("Description", "")
+                            snomed_conf = top_med.get("Score", 0.5)
             except Exception:
                 pass
+
+            # Add medication entry (even without SNOMED code for display)
+            if snomed_code and snomed_code not in seen_codes:
+                seen_codes.add(snomed_code)
+                entry = {
+                    "text":        text_val,
+                    "category":    "MEDICATION",
+                    "snomed_code": snomed_code,
+                    "description": snomed_desc,
+                    "confidence":  round(float(snomed_conf), 3),
+                    "entity_id":   str(uuid.uuid4())[:8],
+                    "source":      "comprehend_medication",
+                    "clinical_category": "medications",
+                }
+                medications.append(entry)
+                all_entities.append(entry)
+            elif not snomed_code:
+                # Add medication without SNOMED code (will show in text extraction)
+                entry = {
+                    "text":        text_val,
+                    "category":    "MEDICATION",
+                    "snomed_code": None,
+                    "description": text_val,
+                    "confidence":  round(float(e.get("Score", 0.7)), 3),
+                    "entity_id":   str(uuid.uuid4())[:8],
+                    "source":      "comprehend_medication_no_snomed",
+                    "clinical_category": "medications",
+                }
+                medications.append(entry)
+                all_entities.append(entry)
 
         # Also capture TEST_NAME entities as investigations
         elif category == "TEST_TREATMENT_PROCEDURE" and entity_type == "TEST_NAME":
@@ -1269,29 +1322,28 @@ Extracted clinical entities:
 - Diagnoses: {', '.join(diagnoses) or 'None identified'}"""
 
     def call_claude(prompt: str, max_tokens: int = 200) -> str:
-        # Explicit no-markdown system instruction prepended to every prompt.
-        # Claude on Bedrock respects this reliably when placed at the start.
+        # Explicit bullet-point instruction for structured output
         system_instruction = (
             "You are a clinical documentation assistant writing structured NHS GP-handover summaries. "
             "STRICT RULES: "
-            "1. Plain text ONLY — no markdown, no bullet points, no numbered lists, no bold, no headers. "
-            "2. Maximum 120 words TOTAL. Stop writing after 120 words. "
+            "1. Output EXACTLY 5-6 bullet points using • character. Each bullet on a new line. "
+            "2. Each bullet should be ONE short sentence (max 15 words). "
             "3. Use clinical shorthand: abbreviate freely (T1DM, PRP, HTN, OD, BD, Hb, BP, SpO2, GCS etc.). "
-            "4. PRIORITY ORDER - include in this sequence, skip sections with no data: "
-            "   (a) Presenting complaint - why patient presented "
-            "   (b) Key examination findings - vitals, physical exam "
-            "   (c) Investigations - test results with values "
-            "   (d) Diagnosis - confirmed or working diagnosis "
-            "   (e) Treatment - procedures, medications given "
-            "   (f) Discharge advice - key instructions "
-            "   (g) Follow-up - next steps "
-            "5. PRESERVE CHRONOLOGY - present events in the order they occurred. "
+            "4. PRIORITY ORDER for bullets: "
+            "   • Diagnosis or main finding "
+            "   • Procedure/treatment performed "
+            "   • Key investigation result "
+            "   • Medication change or new prescription "
+            "   • Follow-up action required "
+            "5. ONLY include information from THIS current episode - exclude all historical PMH. "
             "6. NO HALLUCINATION - only include values, dates, names that appear VERBATIM in the source text. "
-            "7. EXCLUDE historical diseases (PMH) UNLESS directly relevant to current presentation. "
-            "8. Do NOT invent or assume any clinical information not explicitly stated. "
-            "Example: 'PC: 3-day fever and cough. O/E: Temp 38.5C, RR 22, SpO2 94% RA, crackles left base. "
-            "CXR: left lower lobe consolidation. Dx: Community-acquired pneumonia. "
-            "Rx: Amoxicillin 500mg TDS 7 days. Advice: Rest, fluids, safety-net if worsening. F/U: GP review 1 week.'"
+            "7. Do NOT include patient demographics, age, DOB, NHS number in bullets. "
+            "Example output:\n"
+            "• Dx: Haemorrhoids confirmed on flexible sigmoidoscopy\n"
+            "• Procedure: EUA with excision of anal skin tags performed\n"
+            "• Histology: Rectal biopsies taken, results pending\n"
+            "• Rx: Continue lansoprazole 15mg OD\n"
+            "• F/U: Histology results to GP within 2 weeks"
         )
         clean_prompt = system_instruction + "\n\n" + prompt
         body = json.dumps({
@@ -1348,24 +1400,23 @@ Extracted clinical entities:
         "Do NOT include patient identifiers: name, DOB/date of birth, NHS number, address, or hospital number."
     )
 
-    # Base structured prompt - same priority order for all document types
+    # Base structured prompt - bullet point format
     structured_prompt = (
         f"{context}\n\n"
-        "Write a clinical summary following this EXACT priority order (skip sections with no data):\n"
-        "1. PC (Presenting Complaint): Why the patient presented\n"
-        "2. O/E (Examination): Key vitals and physical findings\n"
-        "3. Ix (Investigations): Test results with actual values\n"
-        "4. Dx (Diagnosis): Confirmed or working diagnosis\n"
-        "5. Rx (Treatment): Procedures performed, medications given with doses\n"
-        "6. Advice: Key discharge instructions\n"
-        "7. F/U (Follow-up): Next steps, appointments\n\n"
+        "Write EXACTLY 5-6 bullet points summarizing THIS EPISODE ONLY.\n\n"
+        "FORMAT: Use • character for each bullet, one per line.\n\n"
+        "PRIORITY (include in this order, skip if no data):\n"
+        "• Dx: Diagnosis or main finding\n"
+        "• Procedure: What was done\n"
+        "• Ix: Investigation results with values\n"
+        "• Rx: Medications with doses\n"
+        "• Advice: Key instructions\n"
+        "• F/U: Follow-up plan\n\n"
         "RULES:\n"
-        "- Maximum 120 words\n"
-        "- Preserve chronological order of events\n"
-        "- ONLY include information EXPLICITLY stated in the document - NO assumptions\n"
-        "- EXCLUDE past medical history UNLESS directly relevant to current presentation\n"
-        "- Use abbreviations: PC, O/E, Ix, Dx, Rx, F/U, T1DM, HTN, BP, HR, SpO2, OD, BD, TDS etc.\n"
-        "- Plain text only, no markdown or bullet points"
+        "- Each bullet = ONE short sentence (max 15 words)\n"
+        "- CURRENT EPISODE ONLY - exclude all past medical history\n"
+        "- ONLY include information EXPLICITLY in the document\n"
+        "- Use abbreviations: Dx, Ix, Rx, F/U, OD, BD, TDS, etc."
         + demo_guard
     )
 
