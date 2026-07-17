@@ -224,6 +224,17 @@ try:
 except ImportError:
     _HAS_INVESTIGATION_PARSER = False
 
+# Vital Signs Extractor: Structured vital sign extraction
+try:
+    from vitals_extractor import (
+        VitalsExtractor,
+        VitalSign,
+        extract_vitals,
+    )
+    _HAS_VITALS_EXTRACTOR = True
+except ImportError:
+    _HAS_VITALS_EXTRACTOR = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """

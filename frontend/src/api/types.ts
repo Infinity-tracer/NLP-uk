@@ -220,6 +220,56 @@ export interface ParsedInvestigation {
   confidence: number;                 // Extraction confidence
 }
 
+// Vital sign type
+export type VitalType =
+  | 'temperature'
+  | 'pulse'
+  | 'heart_rate'
+  | 'respiratory_rate'
+  | 'blood_pressure'
+  | 'systolic_bp'
+  | 'diastolic_bp'
+  | 'spo2'
+  | 'gcs'
+  | 'gcs_eye'
+  | 'gcs_verbal'
+  | 'gcs_motor'
+  | 'pain_score'
+  | 'avpu'
+  | 'weight'
+  | 'height'
+  | 'bmi'
+  | 'bsa'
+  | 'blood_glucose';
+
+// Vital sign status
+export type VitalStatus =
+  | 'normal'
+  | 'low'
+  | 'high'
+  | 'critical_low'
+  | 'critical_high'
+  | 'unknown';
+
+// Extracted vital sign
+export interface VitalSign {
+  vital_type: VitalType;              // Type of vital sign
+  value: string;                      // The measured value
+  numeric_value: number | null;       // Numeric value if parseable
+  unit: string;                       // Unit of measurement
+  timestamp: string | null;           // Timestamp if present
+  status: VitalStatus;                // normal/low/high/critical
+  raw_text: string;                   // Original text
+  confidence: number;                 // Extraction confidence
+  // Blood pressure components
+  systolic?: number;
+  diastolic?: number;
+  // GCS components
+  gcs_eye?: number;
+  gcs_verbal?: number;
+  gcs_motor?: number;
+}
+
 export interface StructuredFields {
   admission_date?: string;
   discharge_date?: string;
@@ -418,6 +468,9 @@ export interface ProcessResult {
 
   // Parsed investigations with separated names and findings
   parsed_investigations?: ParsedInvestigation[];
+
+  // Extracted vital signs
+  vital_signs?: VitalSign[];
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
