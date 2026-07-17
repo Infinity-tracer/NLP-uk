@@ -92,6 +92,12 @@ export interface TemporalStats {
   acute: number;
 }
 
+// Validation-rejected entity (for debugging/audit)
+export interface RejectedEntity extends SNOMEDEntity {
+  validation_rejected: true;
+  rejection_reason: string;
+}
+
 export interface SNOMEDData {
   // 5 clinical categories with SNOMED codes
   problems: SNOMEDEntity[];       // Symptoms/issues (e.g., neck pain, tummy irritation)
@@ -109,6 +115,8 @@ export interface SNOMEDData {
   negated_entities?: SNOMEDEntity[];
   // Temporal reasoning: distribution of temporal states
   temporal_stats?: TemporalStats;
+  // Medical validation: entities rejected for impossible mappings
+  validation_rejected?: RejectedEntity[];
 }
 
 // Structured medication data from medication extractor

@@ -2099,6 +2099,287 @@ def deduplicate_snomed_data(snomed_data: dict) -> dict:
     return deduped
 
 
+# ── Medical Validation Engine ─────────────────────────────────────────────────
+# Detects and rejects impossible/invalid SNOMED mappings
+
+# Category validation rules - which SNOMED categories are valid for each clinical category
+VALID_CATEGORY_MAPPINGS = {
+    "medications": {
+        "valid_snomed_types": ["product", "substance", "drug"],
+        "invalid_snomed_types": ["procedure", "body_structure", "organism", "finding", "disorder"],
+        "description_keywords_valid": ["drug", "medication", "tablet", "capsule", "injection", "product", "mg", "ml"],
+        "description_keywords_invalid": ["procedure", "anatomy", "structure", "organism", "animal"],
+    },
+    "investigations": {
+        "valid_snomed_types": ["procedure", "observable", "finding"],
+        "invalid_snomed_types": ["body_structure", "organism", "product"],
+        "description_keywords_valid": ["test", "examination", "scan", "x-ray", "imaging", "measurement", "assessment", "procedure", "blood", "urine"],
+        "description_keywords_invalid": ["anatomy", "structure", "organism", "animal", "plant"],
+    },
+    "diagnoses": {
+        "valid_snomed_types": ["disorder", "finding", "clinical_finding", "situation"],
+        "invalid_snomed_types": ["procedure", "body_structure", "organism", "product"],
+        "description_keywords_valid": ["disease", "disorder", "syndrome", "condition", "infection", "injury", "finding"],
+        "description_keywords_invalid": ["procedure", "anatomy", "organism", "animal", "plant", "drug"],
+    },
+    "problems": {
+        "valid_snomed_types": ["disorder", "finding", "clinical_finding", "situation", "event"],
+        "invalid_snomed_types": ["body_structure", "organism", "product"],
+        "description_keywords_valid": ["symptom", "sign", "complaint", "problem", "issue", "pain", "finding"],
+        "description_keywords_invalid": ["anatomy", "structure", "organism", "animal", "plant"],
+    },
+    "treatments": {
+        "valid_snomed_types": ["procedure", "regime/therapy"],
+        "invalid_snomed_types": ["body_structure", "organism", "finding"],
+        "description_keywords_valid": ["procedure", "therapy", "treatment", "surgery", "operation", "intervention"],
+        "description_keywords_invalid": ["anatomy", "structure", "organism", "animal", "finding"],
+    },
+}
+
+# Known impossible mappings - source text -> invalid SNOMED descriptions
+IMPOSSIBLE_MAPPINGS = {
+    # Clinical terms that should NOT map to animals/organisms
+    "loc": ["animal", "organism", "species", "genus", "family"],
+    "loss of consciousness": ["animal", "organism"],
+    "collapse": ["prolapse", "animal", "organism"],  # Collapse ≠ Prolapse
+    "fall": ["animal", "autumn", "season"],
+    "sob": ["animal", "organism"],  # Shortness of breath
+    "shortness of breath": ["animal", "organism"],
+    "nausea": ["animal", "organism"],
+    "vomiting": ["animal", "organism"],
+    "dizziness": ["animal", "organism"],
+    "headache": ["animal", "organism"],
+    "chest pain": ["animal", "organism"],
+    "abdominal pain": ["animal", "organism"],
+
+    # Anatomical terms that should NOT map to investigations
+    "heart": ["blood test", "x-ray", "scan"],
+    "lung": ["blood test", "investigation"],
+    "liver": ["blood test", "investigation"],
+    "kidney": ["blood test", "investigation"],
+    "brain": ["blood test", "investigation"],
+
+    # Medications that should NOT map to procedures
+    "paracetamol": ["procedure", "surgery", "operation"],
+    "ibuprofen": ["procedure", "surgery", "operation"],
+    "aspirin": ["procedure", "surgery", "operation"],
+    "metformin": ["procedure", "surgery", "operation"],
+    "atorvastatin": ["procedure", "surgery", "operation"],
+    "omeprazole": ["procedure", "surgery", "operation"],
+    "amlodipine": ["procedure", "surgery", "operation"],
+    "ramipril": ["procedure", "surgery", "operation"],
+    "bisoprolol": ["procedure", "surgery", "operation"],
+    "levothyroxine": ["procedure", "surgery", "operation"],
+}
+
+# Semantic similarity blockers - pairs that should NEVER be considered equivalent
+SEMANTIC_BLOCKERS = [
+    ("collapse", "prolapse"),
+    ("fall", "autumn"),
+    ("sob", "crying"),
+    ("loc", "location"),
+    ("loc", "animal"),
+    ("bp", "british petroleum"),
+    ("hr", "human resources"),
+    ("pr", "public relations"),
+    ("gcs", "geographic"),
+    ("ecg", "egg"),
+    ("ct", "connecticut"),
+    ("mri", "mystery"),
+]
+
+
+def validate_category_mapping(entity: dict, clinical_category: str) -> tuple[bool, str | None]:
+    """Validate that an entity's SNOMED mapping is appropriate for its clinical category.
+
+    Returns (is_valid, rejection_reason).
+    """
+    if not entity or not clinical_category:
+        return True, None
+
+    rules = VALID_CATEGORY_MAPPINGS.get(clinical_category)
+    if not rules:
+        return True, None
+
+    description = (entity.get("description", "") or entity.get("snomed_description", "") or "").lower()
+    concept_type = (entity.get("concept_type", "") or "").lower()
+    text = (entity.get("text", "") or "").lower()
+
+    # Check for invalid SNOMED types
+    for invalid_type in rules.get("invalid_snomed_types", []):
+        if invalid_type in concept_type:
+            return False, f"Invalid concept type '{concept_type}' for {clinical_category}"
+
+    # Check for invalid keywords in description
+    for invalid_kw in rules.get("description_keywords_invalid", []):
+        if invalid_kw in description:
+            # Double-check it's not a valid keyword too
+            has_valid = any(vk in description for vk in rules.get("description_keywords_valid", []))
+            if not has_valid:
+                return False, f"Description contains invalid keyword '{invalid_kw}' for {clinical_category}"
+
+    return True, None
+
+
+def validate_impossible_mapping(entity: dict) -> tuple[bool, str | None]:
+    """Check if an entity has an impossible/nonsensical SNOMED mapping.
+
+    Returns (is_valid, rejection_reason).
+    """
+    if not entity:
+        return True, None
+
+    text = (entity.get("text", "") or "").lower().strip()
+    description = (entity.get("description", "") or entity.get("snomed_description", "") or "").lower()
+
+    # Check against known impossible mappings
+    for source_text, invalid_descriptions in IMPOSSIBLE_MAPPINGS.items():
+        if source_text in text or text in source_text:
+            for invalid_desc in invalid_descriptions:
+                if invalid_desc in description:
+                    return False, f"Impossible mapping: '{text}' → '{description}' (blocked: {invalid_desc})"
+
+    # Check semantic blockers
+    for term1, term2 in SEMANTIC_BLOCKERS:
+        if term1 in text and term2 in description:
+            return False, f"Semantic mismatch: '{text}' should not map to '{description}'"
+        if term2 in text and term1 in description:
+            return False, f"Semantic mismatch: '{text}' should not map to '{description}'"
+
+    return True, None
+
+
+def validate_text_description_similarity(entity: dict, min_similarity: float = 0.1) -> tuple[bool, str | None]:
+    """Validate that the source text and SNOMED description are semantically related.
+
+    Uses word overlap to detect completely unrelated mappings.
+    Returns (is_valid, rejection_reason).
+    """
+    if not entity:
+        return True, None
+
+    text = (entity.get("text", "") or "").lower().strip()
+    description = (entity.get("description", "") or entity.get("snomed_description", "") or "").lower()
+
+    if not text or not description:
+        return True, None
+
+    # Skip very short texts (abbreviations) - they often have low word overlap
+    if len(text) < 4:
+        return True, None
+
+    # Extract words (remove common stopwords)
+    stopwords = {"the", "a", "an", "of", "to", "in", "for", "on", "with", "and", "or", "is", "are", "was", "were"}
+    text_words = set(w for w in text.split() if w not in stopwords and len(w) > 2)
+    desc_words = set(w for w in description.split() if w not in stopwords and len(w) > 2)
+
+    if not text_words or not desc_words:
+        return True, None
+
+    # Check for any word overlap or substring match
+    overlap = text_words & desc_words
+    if overlap:
+        return True, None
+
+    # Check for substring relationships (e.g., "diabetes" in "diabetes mellitus")
+    for tw in text_words:
+        for dw in desc_words:
+            if tw in dw or dw in tw:
+                return True, None
+
+    # No overlap at all - likely a bad mapping, but only reject if confidence is low
+    confidence = entity.get("confidence", 1.0)
+    if confidence < 0.5:
+        return False, f"No semantic overlap between '{text}' and '{description}'"
+
+    return True, None
+
+
+def validate_entity(entity: dict, clinical_category: str) -> tuple[bool, str | None]:
+    """Run all validation checks on an entity.
+
+    Returns (is_valid, rejection_reason).
+    """
+    # Check category mapping validity
+    is_valid, reason = validate_category_mapping(entity, clinical_category)
+    if not is_valid:
+        return False, reason
+
+    # Check for impossible mappings
+    is_valid, reason = validate_impossible_mapping(entity)
+    if not is_valid:
+        return False, reason
+
+    # Check text-description similarity (for low confidence items)
+    is_valid, reason = validate_text_description_similarity(entity)
+    if not is_valid:
+        return False, reason
+
+    return True, None
+
+
+def validate_and_filter_entities(entities: list, clinical_category: str) -> tuple[list, list]:
+    """Validate a list of entities and filter out invalid ones.
+
+    Returns (valid_entities, rejected_entities).
+    Rejected entities include the rejection reason.
+    """
+    valid = []
+    rejected = []
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            valid.append(entity)
+            continue
+
+        is_valid, reason = validate_entity(entity, clinical_category)
+
+        if is_valid:
+            valid.append(entity)
+        else:
+            # Add rejection info to the entity
+            rejected_entity = dict(entity)
+            rejected_entity["validation_rejected"] = True
+            rejected_entity["rejection_reason"] = reason
+            rejected.append(rejected_entity)
+
+    return valid, rejected
+
+
+def validate_snomed_data(snomed_data: dict) -> dict:
+    """Apply medical validation to all entity lists in SNOMED data.
+
+    Returns new dict with validated entity lists and rejected entities.
+    """
+    validated = dict(snomed_data)  # Shallow copy
+    all_rejected = []
+
+    category_mapping = {
+        "problems": "problems",
+        "treatments": "treatments",
+        "medications": "medications",
+        "investigations": "investigations",
+        "diagnoses": "diagnoses",
+    }
+
+    for key, clinical_category in category_mapping.items():
+        if key in validated and isinstance(validated[key], list):
+            valid, rejected = validate_and_filter_entities(validated[key], clinical_category)
+            validated[key] = valid
+            all_rejected.extend(rejected)
+
+    # Store rejected entities for debugging/audit
+    validated["validation_rejected"] = all_rejected
+
+    # Rebuild all_entities from validated lists
+    all_entities = []
+    for key in ["problems", "treatments", "medications", "investigations", "diagnoses"]:
+        all_entities.extend(validated.get(key, []))
+    validated["all_entities"] = all_entities[:30]
+
+    return validated
+
+
 def run_comprehensive_extraction(text: str, letter_type: str = "") -> dict:
     """
     Comprehensive clinical document extraction using Claude Sonnet 5.
@@ -4015,6 +4296,9 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     # Deduplicate entities using semantic similarity (ECG/Electrocardiogram -> single entity)
     snomed = deduplicate_snomed_data(snomed)
 
+    # Medical validation - reject impossible mappings (Collapse→Prolapse, LOC→Animal, etc.)
+    snomed = validate_snomed_data(snomed)
+
     # ── OBS-008: Identify originating hospital trust ──────────────────────────
     hospital_trust = extract_hospital_trust(doc_text)
 
@@ -4127,11 +4411,23 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "stats": ner_result.extraction_stats,
         }
         # Filter each NER category by confidence threshold (40% default, always hide <=1%)
-        # Then deduplicate entities using semantic similarity
+        # Then deduplicate entities and validate mappings
+        ner_category_mapping = {
+            "diagnoses": "diagnoses",
+            "symptoms": "problems",
+            "signs": "problems",
+            "investigations": "investigations",
+            "procedures": "treatments",
+            "medications": "medications",
+        }
         for key in raw_ner:
             if key != "stats" and isinstance(raw_ner[key], list):
                 raw_ner[key] = filter_low_confidence_entities(raw_ner[key], DEFAULT_ENTITY_THRESHOLD)
                 raw_ner[key] = deduplicate_entities(raw_ner[key])
+                # Apply medical validation for mapped categories
+                clinical_cat = ner_category_mapping.get(key)
+                if clinical_cat:
+                    raw_ner[key], _ = validate_and_filter_entities(raw_ner[key], clinical_cat)
         result["medical_ner"] = raw_ner
 
     # ── Abbreviation data in result ──────────────────────────────────────────────
