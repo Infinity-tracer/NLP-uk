@@ -190,6 +190,18 @@ try:
 except ImportError:
     _HAS_TEMPORAL_REASONER = False
 
+# SNOMED Mapping Engine: Multi-stage mapping with validation
+try:
+    from snomed_mapper import (
+        SNOMEDMapper,
+        create_mapper as create_snomed_mapper,
+        MappingResult,
+        ConceptType,
+    )
+    _HAS_SNOMED_MAPPER = True
+except ImportError:
+    _HAS_SNOMED_MAPPER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """

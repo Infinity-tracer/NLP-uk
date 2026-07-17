@@ -32,6 +32,22 @@ export type ClinicalTemporalCategory =
   | 'current_medication'
   | 'acute_presentation';
 
+// SNOMED concept type
+export type SNOMEDConceptType =
+  | 'disorder'
+  | 'finding'
+  | 'clinical_finding'
+  | 'procedure'
+  | 'substance'
+  | 'product'
+  | 'morphology'
+  | 'body_structure'
+  | 'qualifier'
+  | 'observable'
+  | 'situation'
+  | 'event'
+  | 'unknown';
+
 export interface SNOMEDEntity {
   text: string;
   category: string;
@@ -54,6 +70,12 @@ export interface SNOMEDEntity {
   temporal_confidence?: number;          // Confidence in the temporal classification
   clinical_temporal_category?: ClinicalTemporalCategory;  // More specific category
   time_reference?: string;               // Time reference (e.g., "2019", "3 years ago")
+  // SNOMED mapping pipeline info
+  concept_type?: SNOMEDConceptType;      // disorder, finding, procedure, etc.
+  spell_corrected?: boolean;             // True if term was spell-corrected
+  synonym_matched?: boolean;             // True if mapped via synonym
+  mapping_rejected?: boolean;            // True if mapping was rejected (low confidence)
+  rejection_reason?: string;             // Reason for rejection
 }
 
 // Temporal state distribution stats
