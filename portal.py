@@ -202,6 +202,17 @@ try:
 except ImportError:
     _HAS_SNOMED_MAPPER = False
 
+# Medication Extractor: Structured parsing with UK abbreviations
+try:
+    from medication_extractor import (
+        MedicationExtractor,
+        StructuredMedication,
+        extract_medications as extract_structured_medications,
+    )
+    _HAS_MEDICATION_EXTRACTOR = True
+except ImportError:
+    _HAS_MEDICATION_EXTRACTOR = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
@@ -2307,14 +2318,55 @@ def extract_icd_codes(text: str) -> list:
 
 
 def extract_medications(text: str) -> list:
-    """Extract medication lines with dosage patterns and medication list entries.
+    """Extract medication lines with structured parsing and UK abbreviation support.
 
-    Handles formats:
-    - "Drug Name Xmg tablet" (standard)
-    - "lansoprazole 15mg gastro-resistant capsule" (discharge summary)
-    - "macrogol compound NPF sugar free oral powder" (compound formulations)
-    - "paracetamol 500mg tablet Take TWO tablets..." (with instructions)
+    Returns structured medication objects with:
+    - drug_name: Name of the medication
+    - strength: Dose strength (e.g., "40mg")
+    - dose: Number of units (e.g., "2 tablets")
+    - route: Route of administration (e.g., "oral")
+    - frequency: Expanded frequency (e.g., "twice daily")
+    - frequency_code: Original abbreviation (e.g., "BD")
+    - duration: Duration if specified
+    - status: current/new/discontinued/changed
+    - form: tablet/capsule/injection/etc.
+    - instructions: Additional instructions
+    - confidence: Extraction confidence score
+
+    Supports UK prescribing abbreviations:
+    - OD (once daily), BD (twice daily), TDS (three times daily)
+    - QDS (four times daily), PRN (as required), STAT (immediately)
+    - OM (every morning), ON (at night), NOCTE (at night)
     """
+    # Use structured medication extractor if available
+    if _HAS_MEDICATION_EXTRACTOR:
+        structured_meds = extract_structured_medications(text)
+        # Convert to legacy format for backwards compatibility
+        meds = []
+        for med in structured_meds:
+            legacy = {
+                "name": med.get("drug_name", ""),
+                "dose": med.get("strength", ""),
+                "raw": med.get("raw_text", ""),
+                # Include full structured data
+                "structured": {
+                    "drug_name": med.get("drug_name"),
+                    "strength": med.get("strength"),
+                    "dose": med.get("dose"),
+                    "route": med.get("route"),
+                    "frequency": med.get("frequency"),
+                    "frequency_code": med.get("frequency_code"),
+                    "duration": med.get("duration"),
+                    "status": med.get("status"),
+                    "form": med.get("form"),
+                    "instructions": med.get("instructions"),
+                    "confidence": med.get("confidence", 0.0),
+                }
+            }
+            meds.append(legacy)
+        return meds[:20]
+
+    # Fallback to regex-based extraction if module not available
     import re
     meds = []
     lines = text.split("\n")

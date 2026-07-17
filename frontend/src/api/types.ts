@@ -107,10 +107,86 @@ export interface SNOMEDData {
   temporal_stats?: TemporalStats;
 }
 
+// Structured medication data from medication extractor
+export interface StructuredMedicationData {
+  drug_name: string | null;
+  strength: string | null;       // e.g., "40mg"
+  dose: string | null;           // e.g., "2 tablets"
+  route: string | null;          // e.g., "oral", "intravenous"
+  frequency: string | null;      // Expanded: "twice daily"
+  frequency_code: string | null; // Original: "BD", "OD", "TDS"
+  duration: string | null;       // e.g., "7 days"
+  status: MedicationStatus;
+  form: string | null;           // e.g., "tablet", "capsule"
+  instructions: string | null;   // e.g., "with food"
+  confidence: number;
+}
+
+// Medication status
+export type MedicationStatus =
+  | 'current'
+  | 'discontinued'
+  | 'new'
+  | 'changed'
+  | 'on_hold'
+  | 'prn'
+  | 'unknown';
+
+// Route of administration
+export type RouteOfAdministration =
+  | 'oral'
+  | 'sublingual'
+  | 'buccal'
+  | 'topical'
+  | 'transdermal'
+  | 'inhalation'
+  | 'nebulised'
+  | 'nasal'
+  | 'ophthalmic'
+  | 'otic'
+  | 'rectal'
+  | 'vaginal'
+  | 'intravenous'
+  | 'intramuscular'
+  | 'subcutaneous'
+  | 'intradermal'
+  | 'intrathecal'
+  | 'epidural'
+  | 'peg'
+  | 'ng'
+  | 'unknown';
+
+// UK Prescribing frequency codes
+export type FrequencyCode =
+  | 'OD'    // Once daily
+  | 'BD'    // Twice daily
+  | 'TDS'   // Three times daily
+  | 'QDS'   // Four times daily
+  | 'PRN'   // As required
+  | 'STAT'  // Immediately
+  | 'OM'    // Every morning
+  | 'ON'    // At night
+  | 'NOCTE' // At night (Latin)
+  | 'Q2H'   // Every 2 hours
+  | 'Q4H'   // Every 4 hours
+  | 'Q6H'   // Every 6 hours
+  | 'Q8H'   // Every 8 hours
+  | 'Q12H'  // Every 12 hours
+  | 'WEEKLY'
+  | '2X WEEKLY'
+  | '3X WEEKLY'
+  | 'AC'    // Before meals
+  | 'PC'    // After meals
+  | 'CC'    // With food
+  | 'ALT'   // Alternate days
+  | 'CONT'; // Continuous
+
 export interface Medication {
   name: string;
   dose: string;
   raw: string;
+  // Full structured data (when medication_extractor is available)
+  structured?: StructuredMedicationData;
 }
 
 export interface StructuredFields {
