@@ -270,6 +270,81 @@ export interface VitalSign {
   gcs_motor?: number;
 }
 
+// Document section type
+export type SectionType =
+  | 'presenting_complaint'
+  | 'history_presenting_complaint'
+  | 'past_medical_history'
+  | 'surgical_history'
+  | 'medication'
+  | 'allergies'
+  | 'social_history'
+  | 'family_history'
+  | 'examination'
+  | 'investigations'
+  | 'diagnosis'
+  | 'differential_diagnosis'
+  | 'treatment'
+  | 'discharge'
+  | 'advice'
+  | 'gp_actions'
+  | 'follow_up'
+  | 'referral'
+  | 'prognosis'
+  | 'unknown'
+  | 'header';
+
+// Entity context based on section
+export type EntityContext =
+  | 'current_symptom'
+  | 'current_diagnosis'
+  | 'historical_disease'
+  | 'past_surgery'
+  | 'current_medication'
+  | 'historical_medication'
+  | 'allergy'
+  | 'social_factor'
+  | 'family_history'
+  | 'examination_finding'
+  | 'investigation_result'
+  | 'treatment_plan'
+  | 'discharge_medication'
+  | 'patient_advice'
+  | 'gp_action'
+  | 'follow_up_plan'
+  | 'suspected_diagnosis'
+  | 'unknown';
+
+// Parsed document section
+export interface DocumentSection {
+  section_type: SectionType;
+  heading: string;                    // Original heading text
+  start_line: number;
+  end_line: number;
+  content: string;                    // Section content
+  confidence: number;
+}
+
+// Section-aware entity
+export interface SectionEntity {
+  text: string;
+  section_type: SectionType;
+  entity_context: EntityContext;      // Derived from section
+  temporal_state: string;             // current/historical/resolved
+  assertion: string;                  // present/absent/possible
+  line_number: number;
+  section_heading: string;
+  confidence: number;
+}
+
+// Parsed document structure
+export interface ParsedDocument {
+  sections: DocumentSection[];
+  section_order: SectionType[];
+  document_type: string | null;       // discharge_summary, clinic_letter, etc.
+  stats: Record<string, number>;
+}
+
 export interface StructuredFields {
   admission_date?: string;
   discharge_date?: string;
@@ -471,6 +546,9 @@ export interface ProcessResult {
 
   // Extracted vital signs
   vital_signs?: VitalSign[];
+
+  // Section-parsed document structure
+  parsed_document?: ParsedDocument;
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';

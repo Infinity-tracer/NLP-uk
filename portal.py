@@ -235,6 +235,19 @@ try:
 except ImportError:
     _HAS_VITALS_EXTRACTOR = False
 
+# Section Parser: Section-aware document parsing
+try:
+    from section_parser import (
+        SectionParser,
+        Section,
+        SectionEntity,
+        parse_document,
+        get_entity_context,
+    )
+    _HAS_SECTION_PARSER = True
+except ImportError:
+    _HAS_SECTION_PARSER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """
