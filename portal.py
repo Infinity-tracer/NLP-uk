@@ -352,6 +352,17 @@ _CLINICAL_KEYWORD_PATTERNS = [
     r'\b(behavioural problems|behaviour problems|sleep challenges|sleep disorder)\b',
     r'\b(psychosis|schizophrenia|bipolar|dementia|delirium|PTSD)\b',
     r'\b(depression|depressive disorder|major depression|low mood)\b',
+    # CAMHS / Mental health symptoms and treatments
+    r'\b(dissociation|dissociative|depersonalisation|derealisation)\b',
+    r'\b(visual disturbance|perceptual disturbance|hypervigilance)\b',
+    r'\b(trauma|traumatic|trauma-related|trauma symptoms)\b',
+    r'\b(anxiety|anxious|panic attack|social anxiety)\b',
+    # Psychological therapies (treatments)
+    r'\b(CBT|cognitive behavioural therapy|cognitive behavioral therapy)\b',
+    r'\b(EMDR|eye movement desensitization|desensitisation)\b',
+    r'\b(psychoeducation|psychotherapy|psychological therapy|talking therapy)\b',
+    r'\b(BPI|brief psychosocial intervention|psychological intervention)\b',
+    r'\b(counselling|counseling|family therapy|group therapy)\b',
     # Neurological — observed in real test PDFs
     r'\b(epilepsy|epileptic|seizure|convulsion|blackout|loss of consciousness)\b',
     r'\b(migraine|headache|cluster headache|tension headache)\b',
@@ -444,6 +455,16 @@ _SNOMED_FALSE_POSITIVE_TERMS = {
     # Document structure terms
     "diagnosis", "post-op", "pre-op", "instructions", "information",
     "details", "section", "actions", "required", "pending",
+    # NHS Footer/Logo false positives - common in NHS documents
+    "disability", "confident", "disability confident", "veteran", "veteran aware",
+    "abusive", "abuse", "no excuse", "noexcuse", "forexcuse", "for abuse",
+    "equality", "equality matters", "race equality", "trail", "trail blazer",
+    "trailblazer", "outstanding", "care quality", "cqc", "inspected and rated",
+    "lgbtq", "stonewall", "employer", "top 100",
+    # Generic admin/context words
+    "leader", "matters", "aware", "polite", "kind", "expect", "treat", "staff",
+    "action against", "verbally", "racially", "physically", "sexually",
+    "stopping access", "services",
 }
 
 # SNOMED codes that are false positives (anatomy, procedure fragments)
@@ -773,14 +794,20 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
                                       "colonoscopy", "endoscopy", "biopsy", "smear",
                                       "mammogram", "pet scan", "bone scan", "histology",
                                       "tissue", "sigmoidoscopy", "gastroscopy", "cystoscopy",
-                                      "bronchoscopy", "laparoscopy", "arthroscopy"]):
+                                      "bronchoscopy", "laparoscopy", "arthroscopy",
+                                      "adhd assessment", "formal assessment", "psychiatric assessment",
+                                      "neurodevelopmental assessment", "developmental assessment",
+                                      "psychological assessment", "mental health assessment"]):
         return "investigations"
 
-    # Treatments (therapeutic procedures)
+    # Treatments (therapeutic procedures including psychological therapies)
     if any(x in text_lower for x in ["chemotherapy", "radiotherapy", "therapy", "treatment",
-                                      "surgery", "physiotherapy", "counseling", "rehabilitation",
-                                      "injection", "excision", "removal", "repair", "banding",
-                                      "phenol", "sclerotherapy", "ablation", "resection"]):
+                                      "surgery", "physiotherapy", "counseling", "counselling",
+                                      "rehabilitation", "injection", "excision", "removal",
+                                      "repair", "banding", "phenol", "sclerotherapy", "ablation",
+                                      "resection", "cbt", "cognitive behavioural", "cognitive behavioral",
+                                      "emdr", "psychotherapy", "psychoeducation", "psychological",
+                                      "intervention", "bpi", "desensiti"]):
         return "treatments"
 
     # Medications (common drug patterns)
@@ -793,6 +820,19 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
         return "problems"
     if "(finding)" in desc_lower or "(situation)" in desc_lower:
         return "problems"
+
+    # Mental health symptoms being treated (not formal diagnoses) go to problems
+    # These are often symptoms under treatment, not confirmed psychiatric diagnoses
+    mental_health_symptoms = [
+        "anxiety", "anxious", "depression", "depressed", "trauma", "traumatic",
+        "dissociation", "dissociative", "panic", "phobia", "stress", "ptsd",
+        "mood", "disturbance", "hypervigilance", "intrusive", "flashback",
+    ]
+    if any(mh in text_lower for mh in mental_health_symptoms):
+        # Unless it's explicitly a disorder diagnosis (e.g., "Generalized anxiety disorder")
+        if "(disorder)" in desc_lower and "disorder" in text_lower:
+            return "diagnoses"  # Formal disorder diagnosis
+        return "problems"  # Symptom being treated
 
     # Disorders are DIAGNOSES (clinical conditions with established diagnosis)
     if "(disorder)" in desc_lower:
