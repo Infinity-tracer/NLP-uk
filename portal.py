@@ -1261,20 +1261,30 @@ Extracted clinical entities:
 - Medications: {', '.join(meds) or 'None identified'}
 - Diagnoses: {', '.join(diagnoses) or 'None identified'}"""
 
-    def call_claude(prompt: str, max_tokens: int = 150) -> str:
+    def call_claude(prompt: str, max_tokens: int = 200) -> str:
         # Explicit no-markdown system instruction prepended to every prompt.
         # Claude on Bedrock respects this reliably when placed at the start.
         system_instruction = (
-            "You are a clinical documentation assistant writing terse NHS GP-handover summaries. "
+            "You are a clinical documentation assistant writing structured NHS GP-handover summaries. "
             "STRICT RULES: "
             "1. Plain text ONLY — no markdown, no bullet points, no numbered lists, no bold, no headers. "
-            "2. Maximum 2 sentences. Maximum 40 words TOTAL. Stop writing after 40 words. "
-            "3. Use clinical shorthand: abbreviate freely (T1DM, PRP, HTN, OD, BD, DOB, Hb, BP etc.). "
-            "4. Content = encounter type + key diagnosis/findings + key clinical values ONLY. "
-            "5. DO NOT include: follow-up plans, next appointments, referrals, GP actions, patient advice, or management plans. "
-            "   Those are handled by separate tabs — keep them OUT of this summary. "
-            "6. Only include values, dates, names that appear verbatim in the source text. "
-            "Example: 'Ophthalmology review T1DM. Bilateral proliferative diabetic retinopathy; PRP completed June 2025; HbA1c 8.2% Dec 2025; neuropathy noted; insulin pump discussed.'"
+            "2. Maximum 120 words TOTAL. Stop writing after 120 words. "
+            "3. Use clinical shorthand: abbreviate freely (T1DM, PRP, HTN, OD, BD, Hb, BP, SpO2, GCS etc.). "
+            "4. PRIORITY ORDER - include in this sequence, skip sections with no data: "
+            "   (a) Presenting complaint - why patient presented "
+            "   (b) Key examination findings - vitals, physical exam "
+            "   (c) Investigations - test results with values "
+            "   (d) Diagnosis - confirmed or working diagnosis "
+            "   (e) Treatment - procedures, medications given "
+            "   (f) Discharge advice - key instructions "
+            "   (g) Follow-up - next steps "
+            "5. PRESERVE CHRONOLOGY - present events in the order they occurred. "
+            "6. NO HALLUCINATION - only include values, dates, names that appear VERBATIM in the source text. "
+            "7. EXCLUDE historical diseases (PMH) UNLESS directly relevant to current presentation. "
+            "8. Do NOT invent or assume any clinical information not explicitly stated. "
+            "Example: 'PC: 3-day fever and cough. O/E: Temp 38.5C, RR 22, SpO2 94% RA, crackles left base. "
+            "CXR: left lower lobe consolidation. Dx: Community-acquired pneumonia. "
+            "Rx: Amoxicillin 500mg TDS 7 days. Advice: Rest, fluids, safety-net if worsening. F/U: GP review 1 week.'"
         )
         clean_prompt = system_instruction + "\n\n" + prompt
         body = json.dumps({
@@ -1310,10 +1320,10 @@ Extracted clinical entities:
         clean = _re.sub(r'^#{1,3}\s+', '', clean, flags=_re.MULTILINE)  # ## headers
         clean = _re.sub(r'^[-–—]{3,}\s*$', '', clean, flags=_re.MULTILINE)  # --- dividers
         clean = clean.strip()
-        # Hard word-count safety net: clip at 45 words, re-terminate at last sentence end
+        # Hard word-count safety net: clip at 130 words, re-terminate at last sentence end
         _words = clean.split()
-        if len(_words) > 45:
-            _truncated = ' '.join(_words[:55])
+        if len(_words) > 130:
+            _truncated = ' '.join(_words[:140])
             # Try to end at a clean sentence boundary
             for _end_char in ['.', '!', '?']:
                 _last = _truncated.rfind(_end_char)
@@ -1323,110 +1333,72 @@ Extracted clinical entities:
             clean = _truncated
         return clean
 
-    # ── Type-specific clinician prompt ─────────────────────────────────────────
+    # ── Unified clinician prompt with priority structure ─────────────────────────
+    # All document types now use the same structured format for consistency
     demo_guard = (
         " Use 'male patient' or 'female patient' where relevant. "
         "Do NOT mention exact age or year-old wording. "
         "Do NOT include patient identifiers: name, DOB/date of birth, NHS number, address, or hospital number."
     )
 
-    if "111" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a 111 First ED triage report. Write a clinical handover summary (3-4 sentences) "
-                       "covering: presenting complaint, differential diagnosis, acuity, treatment given, and disposition/referral decision."
-                       + demo_guard)
+    # Base structured prompt - same priority order for all document types
+    structured_prompt = (
+        f"{context}\n\n"
+        "Write a clinical summary following this EXACT priority order (skip sections with no data):\n"
+        "1. PC (Presenting Complaint): Why the patient presented\n"
+        "2. O/E (Examination): Key vitals and physical findings\n"
+        "3. Ix (Investigations): Test results with actual values\n"
+        "4. Dx (Diagnosis): Confirmed or working diagnosis\n"
+        "5. Rx (Treatment): Procedures performed, medications given with doses\n"
+        "6. Advice: Key discharge instructions\n"
+        "7. F/U (Follow-up): Next steps, appointments\n\n"
+        "RULES:\n"
+        "- Maximum 120 words\n"
+        "- Preserve chronological order of events\n"
+        "- ONLY include information EXPLICITLY stated in the document - NO assumptions\n"
+        "- EXCLUDE past medical history UNLESS directly relevant to current presentation\n"
+        "- Use abbreviations: PC, O/E, Ix, Dx, Rx, F/U, T1DM, HTN, BP, HR, SpO2, OD, BD, TDS etc.\n"
+        "- Plain text only, no markdown or bullet points"
+        + demo_guard
+    )
+
+    # Type-specific additions to the base prompt
+    if "111" in letter_type or "NHS 111" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: This is a 111/triage report - include acuity level and disposition."
     elif "Cancer" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a cancer surveillance clinic letter. Summarise: cancer type and staging, "
-                       "previous treatment, current surveillance findings, next steps and surveillance schedule. Be oncology-precise.")
+        clin_prompt = structured_prompt + "\nNote: Include cancer staging, treatment phase, and surveillance findings."
     elif "HIV" in letter_type or "GUM" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is an HIV/GUM clinic letter. Summarise: HIV status, CD4/viral load, "
-                       "ART regimen changes, comorbidities addressed, and follow-up plan.")
-    elif "Maternity" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a maternity/diabetes letter. Summarise: gestational diabetes status, "
-                       "OGTT results, monitoring plan, equipment prescribed, and GP actions needed.")
-    elif "Psychiatric" in letter_type or "Psychiatry" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a psychiatry outpatient letter. Summarise: diagnoses (with ICD codes), "
-                       "current medications and recent changes, clinical progress, and next review.")
-    elif "Procedure" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a procedure/endoscopy report. Summarise: indication, key findings, "
-                       "impression, biopsy/sampling if done, and recommendations.")
-    elif "Surgical" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a pre-operative surgical outpatient letter. Summarise: diagnosis, "
-                       "planned procedure, risks discussed, and GP actions required.")
-    elif "Mental Health Inpatient" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a mental health inpatient discharge summary. Summarise: "
-                       "admission circumstances (including any MHA section), primary diagnosis, "
-                       "clinical progress on ward, medications at discharge, and community follow-up plan "
-                       "(CRHTT/CMHT). Note any medication monitoring requirements (e.g. lithium levels).")
-    elif "Ophthalmology Referral" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is an ophthalmology referral letter (via Evolutio/eRefer). Summarise: "
-                       "referral reason and pathway, priority (routine/urgent), optometrist findings, "
-                       "visual acuity and IOP if recorded, and which provider the patient is being referred to.")
+        clin_prompt = structured_prompt + "\nNote: Include CD4/viral load values and ART regimen."
+    elif "Maternity" in letter_type or "Antenatal" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include gestational age and relevant obstetric details."
+    elif "Psychiatric" in letter_type or "Psychiatry" in letter_type or "Mental Health" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include mental state findings and any MHA status."
+    elif "Procedure" in letter_type or "Endoscopy" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Focus on indication, findings, and biopsy details."
+    elif "Surgical" in letter_type or "Pre-admission" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include planned procedure and pre-op instructions."
     elif "Ophthalmology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is an ophthalmology outpatient/medical retina clinic letter. Summarise: "
-                       "diagnosis (with retinopathy grading e.g. R2M1P0), key findings per eye (VA, IOP, fundoscopy), "
-                       "treatment given or planned (PRP, laser, injection), and follow-up interval. "
-                       "Note any urgent actions required.")
+        clin_prompt = structured_prompt + "\nNote: Include VA, IOP, and retinopathy grading if present."
     elif "Renal" in letter_type or "Nephrology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a renal/nephrology remote monitoring letter. Summarise: "
-                       "current kidney function (eGFR, creatinine, albumin), trends vs previous, "
-                       "any treatment changes required, and next review/test date.")
-    elif "Paediatric Cardiology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a paediatric cardiology outpatient letter. Summarise: "
-                       "cardiac diagnosis, current symptoms on/off medication, medication changes, "
-                       "planned investigations or procedures (e.g. ablation, EP MDT), and follow-up plan.")
-    elif "Early Pregnancy" in letter_type or "Gynaecology" in letter_type:
-        clin_prompt = (f"{context}\n\nWrite a CONCISE clinical summary (2-3 sentences ONLY). "
-                       "Include: presenting complaint, scan findings, diagnosis, next steps. Be brief.")
-    elif "Antenatal Discharge" in letter_type:
-        clin_prompt = (f"{context}\n\nWrite a CONCISE clinical summary (2-3 sentences ONLY). "
-                       "Include: admission reason, gestational age, key findings, discharge plan. Be brief.")
-    elif "Pre-admission" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a pre-admission/surgical booking letter. Summarise: "
-                       "scheduled procedure, date, speciality, clinician, and key pre-operative instructions "
-                       "for the patient (fasting, medication, transport).")
-    elif "Discharge" in letter_type:
-        clin_prompt = (f"{context}\n\nWrite a CONCISE clinical summary (2-3 sentences ONLY). "
-                       "Include: admission reason, diagnosis, procedures performed, discharge condition. Be brief.")
-    elif "ADHD" in letter_type or "Neurodevelopmental" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is an ADHD/neurodevelopmental assessment letter. "
-                       "Summarise (max 4 sentences, max 70 words): assessment date, whether DSM-5 criteria for ADHD were met, "
-                       "alternative diagnosis reached, informant report findings, outcome (discharged/referred), and any DVLA advice."
-                       + demo_guard)
-    elif "Urology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a urology outpatient letter. "
-                       "Summarise (max 4 sentences, max 70 words): PSA value and trend, imaging findings (mpMRI/PI-RADS if present), "
-                       "clinical decision (biopsy/monitoring), new medications with dose, and follow-up plan with timeframe."
-                       + demo_guard)
-    elif "Dermatology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a dermatology clinic letter. "
-                       "Summarise (max 4 sentences, max 70 words): diagnosis, investigations done or planned (patch testing, bloods), "
-                       "treatments prescribed (creams/emollients with names), and follow-up appointments."
-                       + demo_guard)
-    elif "CTPLD" in letter_type or "Community Psychiatry" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a CTPLD/community psychiatry follow-up care plan. "
-                       "Summarise (max 4 sentences, max 70 words): diagnoses (include neurodevelopmental conditions), "
-                       "capacity/engagement status, current treatment plan, review timeframe, and GP actions required."
-                       + demo_guard)
-    elif "NHS 111" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is an NHS 111 referral to GP. "
-                       "Summarise (max 4 sentences, max 70 words): presenting symptoms, acuity/urgency (timeframe for GP contact), "
-                       "relevant history, and safety-netting advice given."
-                       + demo_guard)
+        clin_prompt = structured_prompt + "\nNote: Include eGFR, creatinine, and CKD stage."
     elif "Cardiology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a cardiology outpatient letter. "
-                       "Summarise (max 4 sentences, max 70 words): cardiac diagnosis, key investigation results "
-                       "(echo EF%, ECG, CT/angiogram findings), medication changes with doses, "
-                       "BP/cholesterol targets, and follow-up plan."
-                       + demo_guard)
+        clin_prompt = structured_prompt + "\nNote: Include echo EF%, ECG findings, and cardiac medications."
+    elif "Discharge" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: This is a discharge summary - emphasise admission reason and discharge status."
+    elif "Urology" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include PSA values and imaging findings."
+    elif "Dermatology" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include lesion description and topical treatments."
     elif "Hepatology" in letter_type or "Gastroenterology" in letter_type:
-        clin_prompt = (f"{context}\n\nThis is a hepatology/gastroenterology outpatient letter. "
-                       "Summarise (max 4 sentences, max 70 words): reason for review, key blood results (LFTs, HbA1c, eGFR), "
-                       "imaging findings, investigations planned (FibroScan, endoscopy), and follow-up plan."
-                       + demo_guard)
+        clin_prompt = structured_prompt + "\nNote: Include LFTs and any endoscopy/imaging findings."
+    elif "ADHD" in letter_type or "Neurodevelopmental" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include assessment outcome and DSM-5 criteria status."
+    elif "Paediatric" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include developmental context where relevant."
+    elif "Early Pregnancy" in letter_type or "Gynaecology" in letter_type:
+        clin_prompt = structured_prompt + "\nNote: Include scan findings and pregnancy viability."
     else:
-        clin_prompt = (f"{context}\n\nWrite a CONCISE clinical summary (2-3 sentences ONLY, maximum 70 words). "
-                       "Include: main diagnosis/condition, key finding or intervention, current status. NO detailed explanations."
-                       + demo_guard)
+        clin_prompt = structured_prompt
 
     # Run all 5 Claude calls concurrently — cuts Track B time by ~4x
     from concurrent.futures import ThreadPoolExecutor
@@ -1483,7 +1455,7 @@ Extracted clinical entities:
     )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        fut_clin      = pool.submit(call_claude, clin_prompt, 100)
+        fut_clin      = pool.submit(call_claude, clin_prompt, 200)
         fut_patient   = pool.submit(call_claude, patient_prompt)
         fut_pharmacist= pool.submit(call_claude, pharmacist_prompt)
         fut_actions   = pool.submit(call_claude, actions_prompt, 400)
