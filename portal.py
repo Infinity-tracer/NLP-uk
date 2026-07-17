@@ -1280,6 +1280,7 @@ Extracted clinical entities:
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
+            "thinking": {"type": "disabled"},
             "messages": [{"role": "user", "content": clean_prompt}]
         })
         resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
@@ -1693,6 +1694,7 @@ Output ONLY the JSON object, nothing else."""
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 2000,
+            "thinking": {"type": "disabled"},
             "messages": [{"role": "user", "content": extraction_prompt}]
         })
         print(f"[DEBUG] Calling Bedrock for comprehensive extraction...", file=sys.stderr)
