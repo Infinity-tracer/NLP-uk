@@ -76,6 +76,10 @@ export interface SNOMEDEntity {
   synonym_matched?: boolean;             // True if mapped via synonym
   mapping_rejected?: boolean;            // True if mapping was rejected (low confidence)
   rejection_reason?: string;             // Reason for rejection
+  // Deduplication fields
+  canonical_form?: string;               // Canonical form of the entity (e.g., "Electrocardiogram" for "ECG")
+  aliases?: string[];                    // Alternative names that were merged (e.g., ["ECG", "12-lead ECG"])
+  snomed_codes_all?: string[];           // All SNOMED codes from merged entities
 }
 
 // Temporal state distribution stats

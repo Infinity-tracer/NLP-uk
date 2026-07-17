@@ -1728,6 +1728,377 @@ def get_confidence_threshold(letter_type: str) -> float:
     return _get_threshold(letter_type)
 
 
+# ── Entity Deduplication System ───────────────────────────────────────────────
+# Canonical mappings for semantic similarity - abbreviation/variant -> canonical form
+CANONICAL_ENTITY_MAPPINGS = {
+    # Cardiology investigations
+    "ecg": "Electrocardiogram",
+    "electrocardiogram": "Electrocardiogram",
+    "12 lead ecg": "Electrocardiogram",
+    "12-lead ecg": "Electrocardiogram",
+    "ekg": "Electrocardiogram",
+    "echo": "Echocardiogram",
+    "echocardiogram": "Echocardiogram",
+    "echocardiography": "Echocardiogram",
+    "tte": "Transthoracic Echocardiogram",
+    "transthoracic echo": "Transthoracic Echocardiogram",
+    "toe": "Transoesophageal Echocardiogram",
+    "tee": "Transoesophageal Echocardiogram",
+
+    # Blood tests - Haematology
+    "fbc": "Full Blood Count",
+    "full blood count": "Full Blood Count",
+    "cbc": "Complete Blood Count",
+    "complete blood count": "Complete Blood Count",
+    "blood count": "Full Blood Count",
+    "hb": "Haemoglobin",
+    "haemoglobin": "Haemoglobin",
+    "hemoglobin": "Haemoglobin",
+    "wcc": "White Cell Count",
+    "wbc": "White Blood Cell Count",
+    "white cell count": "White Cell Count",
+    "white blood cell count": "White Cell Count",
+
+    # Blood tests - Biochemistry
+    "u&e": "Urea and Electrolytes",
+    "u+e": "Urea and Electrolytes",
+    "ue": "Urea and Electrolytes",
+    "u&es": "Urea and Electrolytes",
+    "urea and electrolytes": "Urea and Electrolytes",
+    "urea & electrolytes": "Urea and Electrolytes",
+    "renal function": "Renal Function Tests",
+    "renal profile": "Renal Function Tests",
+    "kidney function": "Renal Function Tests",
+    "lft": "Liver Function Tests",
+    "lfts": "Liver Function Tests",
+    "liver function": "Liver Function Tests",
+    "liver function tests": "Liver Function Tests",
+    "liver panel": "Liver Function Tests",
+    "tfts": "Thyroid Function Tests",
+    "tft": "Thyroid Function Tests",
+    "thyroid function": "Thyroid Function Tests",
+    "thyroid function tests": "Thyroid Function Tests",
+    "thyroid panel": "Thyroid Function Tests",
+
+    # Inflammatory markers
+    "crp": "C-Reactive Protein",
+    "c-reactive protein": "C-Reactive Protein",
+    "c reactive protein": "C-Reactive Protein",
+    "esr": "Erythrocyte Sedimentation Rate",
+    "erythrocyte sedimentation rate": "Erythrocyte Sedimentation Rate",
+    "sed rate": "Erythrocyte Sedimentation Rate",
+
+    # Coagulation
+    "inr": "International Normalised Ratio",
+    "international normalised ratio": "International Normalised Ratio",
+    "international normalized ratio": "International Normalised Ratio",
+    "pt": "Prothrombin Time",
+    "prothrombin time": "Prothrombin Time",
+    "aptt": "Activated Partial Thromboplastin Time",
+    "ptt": "Partial Thromboplastin Time",
+
+    # Cardiac markers
+    "troponin": "Troponin",
+    "trop": "Troponin",
+    "hs-trop": "High-Sensitivity Troponin",
+    "hstrop": "High-Sensitivity Troponin",
+    "high sensitivity troponin": "High-Sensitivity Troponin",
+    "bnp": "B-Type Natriuretic Peptide",
+    "b-type natriuretic peptide": "B-Type Natriuretic Peptide",
+    "nt-probnp": "NT-proBNP",
+    "ntprobnp": "NT-proBNP",
+    "pro-bnp": "NT-proBNP",
+
+    # Diabetes
+    "hba1c": "HbA1c",
+    "glycated haemoglobin": "HbA1c",
+    "glycated hemoglobin": "HbA1c",
+    "a1c": "HbA1c",
+    "glucose": "Blood Glucose",
+    "blood glucose": "Blood Glucose",
+    "bg": "Blood Glucose",
+    "cbg": "Capillary Blood Glucose",
+    "fasting glucose": "Fasting Glucose",
+    "ogtt": "Oral Glucose Tolerance Test",
+    "glucose tolerance test": "Oral Glucose Tolerance Test",
+
+    # Imaging
+    "cxr": "Chest X-Ray",
+    "chest x-ray": "Chest X-Ray",
+    "chest xray": "Chest X-Ray",
+    "chest radiograph": "Chest X-Ray",
+    "ct": "CT Scan",
+    "ct scan": "CT Scan",
+    "cat scan": "CT Scan",
+    "computed tomography": "CT Scan",
+    "mri": "MRI Scan",
+    "mri scan": "MRI Scan",
+    "magnetic resonance imaging": "MRI Scan",
+    "magnetic resonance": "MRI Scan",
+    "us": "Ultrasound",
+    "uss": "Ultrasound",
+    "ultrasound": "Ultrasound",
+    "ultrasound scan": "Ultrasound",
+    "sonography": "Ultrasound",
+
+    # Common conditions
+    "t1dm": "Type 1 Diabetes Mellitus",
+    "type 1 diabetes": "Type 1 Diabetes Mellitus",
+    "type 1 diabetes mellitus": "Type 1 Diabetes Mellitus",
+    "iddm": "Type 1 Diabetes Mellitus",
+    "t2dm": "Type 2 Diabetes Mellitus",
+    "type 2 diabetes": "Type 2 Diabetes Mellitus",
+    "type 2 diabetes mellitus": "Type 2 Diabetes Mellitus",
+    "niddm": "Type 2 Diabetes Mellitus",
+    "dm": "Diabetes Mellitus",
+    "diabetes": "Diabetes Mellitus",
+    "diabetes mellitus": "Diabetes Mellitus",
+    "htn": "Hypertension",
+    "hypertension": "Hypertension",
+    "high blood pressure": "Hypertension",
+    "af": "Atrial Fibrillation",
+    "atrial fibrillation": "Atrial Fibrillation",
+    "a fib": "Atrial Fibrillation",
+    "afib": "Atrial Fibrillation",
+    "mi": "Myocardial Infarction",
+    "myocardial infarction": "Myocardial Infarction",
+    "heart attack": "Myocardial Infarction",
+    "stemi": "ST-Elevation Myocardial Infarction",
+    "nstemi": "Non-ST-Elevation Myocardial Infarction",
+    "cva": "Cerebrovascular Accident",
+    "cerebrovascular accident": "Cerebrovascular Accident",
+    "stroke": "Cerebrovascular Accident",
+    "tia": "Transient Ischaemic Attack",
+    "transient ischaemic attack": "Transient Ischaemic Attack",
+    "mini stroke": "Transient Ischaemic Attack",
+    "copd": "Chronic Obstructive Pulmonary Disease",
+    "chronic obstructive pulmonary disease": "Chronic Obstructive Pulmonary Disease",
+    "ckd": "Chronic Kidney Disease",
+    "chronic kidney disease": "Chronic Kidney Disease",
+    "chronic renal failure": "Chronic Kidney Disease",
+    "crf": "Chronic Kidney Disease",
+    "aki": "Acute Kidney Injury",
+    "acute kidney injury": "Acute Kidney Injury",
+    "acute renal failure": "Acute Kidney Injury",
+    "arf": "Acute Kidney Injury",
+    "uti": "Urinary Tract Infection",
+    "urinary tract infection": "Urinary Tract Infection",
+    "urine infection": "Urinary Tract Infection",
+    "lrti": "Lower Respiratory Tract Infection",
+    "lower respiratory tract infection": "Lower Respiratory Tract Infection",
+    "chest infection": "Lower Respiratory Tract Infection",
+    "urti": "Upper Respiratory Tract Infection",
+    "upper respiratory tract infection": "Upper Respiratory Tract Infection",
+    "cap": "Community-Acquired Pneumonia",
+    "community acquired pneumonia": "Community-Acquired Pneumonia",
+    "pneumonia": "Pneumonia",
+    "dvt": "Deep Vein Thrombosis",
+    "deep vein thrombosis": "Deep Vein Thrombosis",
+    "pe": "Pulmonary Embolism",
+    "pulmonary embolism": "Pulmonary Embolism",
+    "vte": "Venous Thromboembolism",
+    "venous thromboembolism": "Venous Thromboembolism",
+
+    # Procedures
+    "cabg": "Coronary Artery Bypass Graft",
+    "coronary artery bypass": "Coronary Artery Bypass Graft",
+    "bypass surgery": "Coronary Artery Bypass Graft",
+    "pci": "Percutaneous Coronary Intervention",
+    "percutaneous coronary intervention": "Percutaneous Coronary Intervention",
+    "angioplasty": "Percutaneous Coronary Intervention",
+    "stent": "Coronary Stent",
+    "coronary stent": "Coronary Stent",
+    "ercp": "Endoscopic Retrograde Cholangiopancreatography",
+    "endoscopic retrograde cholangiopancreatography": "Endoscopic Retrograde Cholangiopancreatography",
+    "egd": "Oesophagogastroduodenoscopy",
+    "ogd": "Oesophagogastroduodenoscopy",
+    "oesophagogastroduodenoscopy": "Oesophagogastroduodenoscopy",
+    "gastroscopy": "Oesophagogastroduodenoscopy",
+    "upper gi endoscopy": "Oesophagogastroduodenoscopy",
+}
+
+
+def get_canonical_form(text: str) -> str:
+    """Get canonical form of an entity text.
+
+    Returns the canonical form if found in mappings, otherwise returns
+    the original text with normalized casing.
+    """
+    if not text:
+        return text
+
+    normalized = text.lower().strip()
+    return CANONICAL_ENTITY_MAPPINGS.get(normalized, text)
+
+
+def compute_text_similarity(text1: str, text2: str) -> float:
+    """Compute similarity score between two text strings.
+
+    Uses multiple heuristics:
+    1. Exact match (after normalization) = 1.0
+    2. Same canonical form = 1.0
+    3. One is substring of other = 0.9
+    4. High character overlap = scaled score
+
+    Returns similarity score 0.0 - 1.0
+    """
+    if not text1 or not text2:
+        return 0.0
+
+    t1 = text1.lower().strip()
+    t2 = text2.lower().strip()
+
+    # Exact match
+    if t1 == t2:
+        return 1.0
+
+    # Same canonical form
+    c1 = get_canonical_form(text1)
+    c2 = get_canonical_form(text2)
+    if c1.lower() == c2.lower():
+        return 1.0
+
+    # Substring relationship (one contains the other)
+    if t1 in t2 or t2 in t1:
+        shorter = min(len(t1), len(t2))
+        longer = max(len(t1), len(t2))
+        if shorter >= 3 and shorter / longer > 0.5:
+            return 0.9
+
+    # Character set overlap (Jaccard-like)
+    words1 = set(t1.split())
+    words2 = set(t2.split())
+    if words1 and words2:
+        intersection = words1 & words2
+        union = words1 | words2
+        jaccard = len(intersection) / len(union)
+        if jaccard > 0.5:
+            return jaccard * 0.8  # Scale down slightly
+
+    return 0.0
+
+
+def deduplicate_entities(
+    entities: list,
+    similarity_threshold: float = 0.85,
+    text_key: str = "text",
+    confidence_key: str = "confidence"
+) -> list:
+    """Deduplicate entities based on semantic similarity.
+
+    Groups entities that are semantically equivalent (e.g., ECG/Electrocardiogram)
+    and merges them into a single entity with the highest confidence.
+
+    Returns list of deduplicated entities, each with an 'aliases' field listing
+    alternative names that were merged.
+    """
+    if not entities:
+        return []
+
+    # Group entities by canonical form
+    canonical_groups: dict[str, list] = {}
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+
+        text = entity.get(text_key, "")
+        if not text:
+            continue
+
+        canonical = get_canonical_form(text)
+        canonical_lower = canonical.lower()
+
+        # Check if this matches an existing group
+        matched_group = None
+        for group_key in canonical_groups:
+            # Check canonical match
+            if group_key.lower() == canonical_lower:
+                matched_group = group_key
+                break
+            # Check similarity with group members
+            for member in canonical_groups[group_key]:
+                member_text = member.get(text_key, "")
+                if compute_text_similarity(text, member_text) >= similarity_threshold:
+                    matched_group = group_key
+                    break
+            if matched_group:
+                break
+
+        if matched_group:
+            canonical_groups[matched_group].append(entity)
+        else:
+            canonical_groups[canonical] = [entity]
+
+    # Merge each group into a single entity
+    deduplicated = []
+    for canonical, group in canonical_groups.items():
+        if len(group) == 1:
+            # Single entity - add canonical form and empty aliases
+            merged = dict(group[0])
+            merged["canonical_form"] = canonical
+            merged["aliases"] = []
+            deduplicated.append(merged)
+        else:
+            # Multiple entities - merge them
+            # Use the one with highest confidence as base
+            sorted_group = sorted(group, key=lambda e: e.get(confidence_key, 0), reverse=True)
+            best = sorted_group[0]
+
+            merged = dict(best)
+            merged["canonical_form"] = canonical
+            merged["text"] = canonical  # Use canonical form as display text
+
+            # Collect all unique aliases (excluding the canonical form)
+            aliases = set()
+            for entity in group:
+                entity_text = entity.get(text_key, "")
+                if entity_text and entity_text.lower() != canonical.lower():
+                    aliases.add(entity_text)
+
+            merged["aliases"] = sorted(list(aliases))
+
+            # Take highest confidence
+            max_conf = max(e.get(confidence_key, 0) for e in group)
+            merged[confidence_key] = max_conf
+
+            # Merge SNOMED codes - keep all unique codes
+            snomed_codes = set()
+            for entity in group:
+                code = entity.get("snomed_code", "")
+                if code:
+                    snomed_codes.add(code)
+            if snomed_codes:
+                merged["snomed_codes_all"] = sorted(list(snomed_codes))
+                # Keep primary code as the one from highest confidence entity
+                if best.get("snomed_code"):
+                    merged["snomed_code"] = best["snomed_code"]
+
+            deduplicated.append(merged)
+
+    return deduplicated
+
+
+def deduplicate_snomed_data(snomed_data: dict) -> dict:
+    """Apply deduplication to all entity lists in SNOMED data.
+
+    Returns new dict with deduplicated entity lists.
+    """
+    deduped = dict(snomed_data)  # Shallow copy
+
+    for key in ["problems", "treatments", "medications", "investigations", "diagnoses"]:
+        if key in deduped and isinstance(deduped[key], list):
+            deduped[key] = deduplicate_entities(deduped[key])
+
+    # Rebuild all_entities from deduplicated lists
+    all_entities = []
+    for key in ["problems", "treatments", "medications", "investigations", "diagnoses"]:
+        all_entities.extend(deduped.get(key, []))
+    deduped["all_entities"] = all_entities[:30]  # Keep limit
+
+    return deduped
+
+
 def run_comprehensive_extraction(text: str, letter_type: str = "") -> dict:
     """
     Comprehensive clinical document extraction using Claude Sonnet 5.
@@ -3641,6 +4012,9 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     # Filter low-confidence entities (below 40% threshold, and always remove <=1%)
     snomed = filter_snomed_data(snomed, DEFAULT_ENTITY_THRESHOLD)
 
+    # Deduplicate entities using semantic similarity (ECG/Electrocardiogram -> single entity)
+    snomed = deduplicate_snomed_data(snomed)
+
     # ── OBS-008: Identify originating hospital trust ──────────────────────────
     hospital_trust = extract_hospital_trust(doc_text)
 
@@ -3753,9 +4127,11 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
             "stats": ner_result.extraction_stats,
         }
         # Filter each NER category by confidence threshold (40% default, always hide <=1%)
+        # Then deduplicate entities using semantic similarity
         for key in raw_ner:
             if key != "stats" and isinstance(raw_ner[key], list):
                 raw_ner[key] = filter_low_confidence_entities(raw_ner[key], DEFAULT_ENTITY_THRESHOLD)
+                raw_ner[key] = deduplicate_entities(raw_ner[key])
         result["medical_ner"] = raw_ner
 
     # ── Abbreviation data in result ──────────────────────────────────────────────
