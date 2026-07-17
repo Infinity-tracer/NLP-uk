@@ -3913,19 +3913,118 @@ def extract_clinical_specifics(text: str, letter_type: str) -> dict:
 # STANDARDIZED OUTPUT SCHEMA - Entity Transformers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def build_evidence_span(entity: dict, doc_text: str = "", page_number: int = 1) -> dict | None:
+    """
+    Build evidence span from entity data.
+    Returns None if no valid evidence exists (entity should be discarded).
+
+    Evidence span contains:
+    - text: The exact text span from document
+    - page: 1-indexed page number
+    - line: 1-indexed line number
+    - sentence: Full sentence containing the entity
+    - char_start, char_end: Character offsets
+    """
+    text = entity.get("text", "").strip()
+    if not text:
+        return None
+
+    # Get character positions
+    char_start = entity.get("start_pos") or entity.get("char_start") or 0
+    char_end = entity.get("end_pos") or entity.get("char_end") or (char_start + len(text))
+
+    # Get or compute line number
+    line_number = entity.get("line_number")
+    if line_number is None and doc_text and char_start > 0:
+        # Compute line number from character offset
+        line_number = doc_text[:char_start].count('\n') + 1
+    line_number = line_number or 1
+
+    # Get or extract sentence context
+    sentence = entity.get("evidence") or entity.get("sentence") or ""
+    if not sentence and doc_text and char_start >= 0:
+        # Extract surrounding sentence (up to 200 chars around the entity)
+        context_start = max(0, char_start - 100)
+        context_end = min(len(doc_text), char_end + 100)
+        raw_context = doc_text[context_start:context_end]
+        # Find sentence boundaries
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', raw_context)
+        for s in sentences:
+            if text.lower() in s.lower():
+                sentence = s.strip()
+                break
+        if not sentence:
+            sentence = raw_context.strip()
+
+    # If we still have no sentence/evidence, use the text itself
+    if not sentence:
+        sentence = text
+
+    return {
+        "text": text,
+        "page": page_number,
+        "line": line_number,
+        "sentence": sentence,
+        "char_start": char_start,
+        "char_end": char_end,
+    }
+
+
+def has_valid_evidence(entity: dict) -> bool:
+    """
+    Check if entity has valid evidence for inclusion.
+    Entities without evidence are discarded (no hallucination policy).
+    """
+    # Must have text
+    if not entity.get("text", "").strip():
+        return False
+
+    # Must have some position info OR pre-built evidence
+    has_position = (
+        entity.get("start_pos") is not None or
+        entity.get("char_start") is not None or
+        entity.get("line_number") is not None or
+        entity.get("evidence") is not None or
+        entity.get("sentence") is not None
+    )
+
+    return has_position
+
+
 def transform_to_clinical_entity(
     entity: dict,
     category: str,
     section: str = "unknown",
-    page_number: int = 1
-) -> dict:
+    page_number: int = 1,
+    doc_text: str = ""
+) -> dict | None:
     """
     Transform any extracted entity to the standardized ClinicalEntity schema.
 
+    EVIDENCE REQUIREMENT: Returns None if entity has no valid evidence.
+    Entities without supporting evidence are discarded to prevent hallucination.
+
     Required output fields:
-    - text, normalized_text, ontology_code, ontology_system, confidence,
-    - assertion_status, temporal_status, section, page_number
+    - text, normalized_text, evidence (REQUIRED)
+    - ontology_code, ontology_system, ontology_source_text
+    - confidence, assertion_status, temporal_status, section
     """
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # EVIDENCE CHECK - Discard entities without supporting evidence
+    # ═══════════════════════════════════════════════════════════════════════════════
+    if not has_valid_evidence(entity):
+        import sys
+        print(f"[WARN] Entity discarded (no evidence): {entity.get('text', 'unknown')[:50]}", file=sys.stderr)
+        return None
+
+    # Build evidence span
+    evidence = build_evidence_span(entity, doc_text, page_number)
+    if not evidence:
+        import sys
+        print(f"[WARN] Entity discarded (invalid evidence span): {entity.get('text', 'unknown')[:50]}", file=sys.stderr)
+        return None
+
     # Map assertion status
     assertion_map = {
         "present": "present",
@@ -3953,7 +4052,8 @@ def transform_to_clinical_entity(
     raw_temporal = entity.get("temporal_state", "") or entity.get("temporal_status", "") or "current"
     temporal_status = temporal_map.get(str(raw_temporal).lower(), "current")
 
-    # Determine ontology system
+    # Determine ontology system and preserve source text
+    source_text = entity.get("text", "")  # Original text that was mapped
     snomed_code = entity.get("snomed_code") or entity.get("ontology_code")
     if snomed_code:
         ontology_system = "SNOMED-CT"
@@ -3966,16 +4066,22 @@ def transform_to_clinical_entity(
     else:
         ontology_system = "NONE"
 
-    # Build standardized entity
+    # Build standardized entity with REQUIRED evidence
     return {
         # Core identification
         "text": entity.get("text", ""),
         "normalized_text": entity.get("normalized_text") or entity.get("canonical_form") or entity.get("description") or entity.get("text", ""),
 
-        # Ontology coding
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # EVIDENCE (REQUIRED) - page, line, sentence
+        # ═══════════════════════════════════════════════════════════════════════════════
+        "evidence": evidence,
+
+        # Ontology coding (with source text reference)
         "ontology_code": snomed_code,
         "ontology_system": ontology_system,
         "ontology_description": entity.get("snomed_description") or entity.get("description"),
+        "ontology_source_text": source_text if snomed_code else None,  # Text that was mapped
 
         # Confidence & validation
         "confidence": float(entity.get("confidence", 0.5)),
@@ -3988,25 +4094,20 @@ def transform_to_clinical_entity(
         "temporal_status": temporal_status,
         "section": entity.get("section") or section,
 
-        # Document position
-        "page_number": page_number,
-        "line_number": entity.get("line_number"),
-        "char_start": entity.get("start_pos"),
-        "char_end": entity.get("end_pos"),
-
-        # Additional context
-        "evidence": entity.get("evidence"),
-        "attributes": entity.get("attributes"),
-
         # Deduplication
         "canonical_form": entity.get("canonical_form"),
         "aliases": entity.get("aliases"),
+
+        # Additional context
+        "attributes": entity.get("attributes"),
     }
 
 
-def transform_diagnosis_entity(entity: dict, section: str = "diagnosis", page_number: int = 1) -> dict:
-    """Transform to DiagnosisEntity schema."""
-    base = transform_to_clinical_entity(entity, "diagnosis", section, page_number)
+def transform_diagnosis_entity(entity: dict, section: str = "diagnosis", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to DiagnosisEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "diagnosis", section, page_number, doc_text)
+    if base is None:
+        return None
     base.update({
         "icd10_code": entity.get("icd10_code"),
         "icd10_description": entity.get("icd10_description"),
@@ -4016,9 +4117,11 @@ def transform_diagnosis_entity(entity: dict, section: str = "diagnosis", page_nu
     return base
 
 
-def transform_symptom_entity(entity: dict, section: str = "presenting_complaint", page_number: int = 1) -> dict:
-    """Transform to SymptomEntity schema."""
-    base = transform_to_clinical_entity(entity, "symptom", section, page_number)
+def transform_symptom_entity(entity: dict, section: str = "presenting_complaint", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to SymptomEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "symptom", section, page_number, doc_text)
+    if base is None:
+        return None
     attrs = entity.get("attributes", {}) or {}
     base.update({
         "onset": attrs.get("onset"),
@@ -4033,9 +4136,11 @@ def transform_symptom_entity(entity: dict, section: str = "presenting_complaint"
     return base
 
 
-def transform_medication_entity(entity: dict, section: str = "medication", page_number: int = 1) -> dict:
-    """Transform to MedicationEntity schema."""
-    base = transform_to_clinical_entity(entity, "medication", section, page_number)
+def transform_medication_entity(entity: dict, section: str = "medication", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to MedicationEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "medication", section, page_number, doc_text)
+    if base is None:
+        return None
 
     # Get structured medication data if available
     structured = entity.get("structured", {}) or {}
@@ -4068,9 +4173,11 @@ def transform_medication_entity(entity: dict, section: str = "medication", page_
     return base
 
 
-def transform_investigation_entity(entity: dict, section: str = "investigations", page_number: int = 1) -> dict:
-    """Transform to InvestigationEntity schema."""
-    base = transform_to_clinical_entity(entity, "investigation", section, page_number)
+def transform_investigation_entity(entity: dict, section: str = "investigations", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to InvestigationEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "investigation", section, page_number, doc_text)
+    if base is None:
+        return None
 
     # Map finding status
     status_map = {
@@ -4108,9 +4215,11 @@ def transform_investigation_entity(entity: dict, section: str = "investigations"
     return base
 
 
-def transform_vital_entity(entity: dict, section: str = "examination", page_number: int = 1) -> dict:
-    """Transform to VitalEntity schema."""
-    base = transform_to_clinical_entity(entity, "vital", section, page_number)
+def transform_vital_entity(entity: dict, section: str = "examination", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to VitalEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "vital", section, page_number, doc_text)
+    if base is None:
+        return None
 
     base.update({
         "vital_type": entity.get("vital_type"),
@@ -4128,9 +4237,11 @@ def transform_vital_entity(entity: dict, section: str = "examination", page_numb
     return base
 
 
-def transform_procedure_entity(entity: dict, section: str = "treatment", page_number: int = 1) -> dict:
-    """Transform to ProcedureEntity schema."""
-    base = transform_to_clinical_entity(entity, "procedure", section, page_number)
+def transform_procedure_entity(entity: dict, section: str = "treatment", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to ProcedureEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "procedure", section, page_number, doc_text)
+    if base is None:
+        return None
 
     base.update({
         "procedure_name": entity.get("text"),
@@ -4145,9 +4256,11 @@ def transform_procedure_entity(entity: dict, section: str = "treatment", page_nu
     return base
 
 
-def transform_referral_entity(entity: dict, section: str = "referral", page_number: int = 1) -> dict:
-    """Transform to ReferralEntity schema."""
-    base = transform_to_clinical_entity(entity, "referral", section, page_number)
+def transform_referral_entity(entity: dict, section: str = "referral", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to ReferralEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "referral", section, page_number, doc_text)
+    if base is None:
+        return None
 
     # Map referral type
     type_map = {"routine": "routine", "urgent": "urgent", "2ww": "2ww", "emergency": "emergency"}
@@ -4167,10 +4280,13 @@ def transform_action_entity(
     entity: dict,
     action_type: str = "gp_action",
     section: str = "gp_actions",
-    page_number: int = 1
-) -> dict:
-    """Transform to ActionEntity schema."""
-    base = transform_to_clinical_entity(entity, "action", section, page_number)
+    page_number: int = 1,
+    doc_text: str = ""
+) -> dict | None:
+    """Transform to ActionEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "action", section, page_number, doc_text)
+    if base is None:
+        return None
 
     base.update({
         "action_type": action_type,
@@ -4182,9 +4298,11 @@ def transform_action_entity(
     return base
 
 
-def transform_followup_entity(entity: dict, section: str = "follow_up", page_number: int = 1) -> dict:
-    """Transform to FollowUpEntity schema."""
-    base = transform_to_clinical_entity(entity, "follow_up", section, page_number)
+def transform_followup_entity(entity: dict, section: str = "follow_up", page_number: int = 1, doc_text: str = "") -> dict | None:
+    """Transform to FollowUpEntity schema. Returns None if no evidence."""
+    base = transform_to_clinical_entity(entity, "follow_up", section, page_number, doc_text)
+    if base is None:
+        return None
 
     # Map follow-up type
     type_map = {"appointment": "appointment", "test": "test", "review": "review", "contact": "contact"}
@@ -4237,106 +4355,168 @@ def build_standardized_output(
     """
     Build the standardized output schema with all clinical entities.
     Returns both new standardized format AND legacy fields for backward compatibility.
+
+    EVIDENCE REQUIREMENT: Entities without valid evidence are filtered out.
+    This prevents hallucination - only entities traceable to source text are included.
     """
+    # Use extracted_text for evidence building
+    doc_text = extracted_text or ""
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # TRANSFORM ENTITIES TO STANDARDIZED SCHEMA
+    # All transformers return None for entities without evidence - filter them out
     # ═══════════════════════════════════════════════════════════════════════════════
 
     # --- Diagnoses ---
     diagnoses = []
     for e in snomed_data.get("diagnoses", []):
-        diagnoses.append(transform_diagnosis_entity(e))
-    # Add from NER if available
+        transformed = transform_diagnosis_entity(e, doc_text=doc_text)
+        if transformed is not None:
+            diagnoses.append(transformed)
     if ner_result and ner_result.get("diagnoses"):
         for e in ner_result["diagnoses"]:
-            diagnoses.append(transform_diagnosis_entity(e))
+            transformed = transform_diagnosis_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                diagnoses.append(transformed)
 
     # --- Symptoms ---
     symptoms = []
     for e in snomed_data.get("problems", []):
-        symptoms.append(transform_symptom_entity(e))
+        transformed = transform_symptom_entity(e, doc_text=doc_text)
+        if transformed is not None:
+            symptoms.append(transformed)
     if ner_result:
         for e in ner_result.get("symptoms", []):
-            symptoms.append(transform_symptom_entity(e))
+            transformed = transform_symptom_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                symptoms.append(transformed)
         for e in ner_result.get("signs", []):
-            symptoms.append(transform_symptom_entity(e, section="examination"))
+            transformed = transform_symptom_entity(e, section="examination", doc_text=doc_text)
+            if transformed is not None:
+                symptoms.append(transformed)
 
     # --- Medications ---
     medications_transformed = []
     for e in snomed_data.get("medications", []):
-        medications_transformed.append(transform_medication_entity(e))
+        transformed = transform_medication_entity(e, doc_text=doc_text)
+        if transformed is not None:
+            medications_transformed.append(transformed)
     for med in medications:
-        medications_transformed.append(transform_medication_entity(med))
+        transformed = transform_medication_entity(med, doc_text=doc_text)
+        if transformed is not None:
+            medications_transformed.append(transformed)
     if ner_result and ner_result.get("medications"):
         for e in ner_result["medications"]:
-            medications_transformed.append(transform_medication_entity(e))
+            transformed = transform_medication_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                medications_transformed.append(transformed)
 
     # --- Investigations ---
     investigations_transformed = []
     for e in snomed_data.get("investigations", []):
-        investigations_transformed.append(transform_investigation_entity(e))
+        transformed = transform_investigation_entity(e, doc_text=doc_text)
+        if transformed is not None:
+            investigations_transformed.append(transformed)
     if parsed_investigations:
         for e in parsed_investigations:
-            investigations_transformed.append(transform_investigation_entity(e))
+            transformed = transform_investigation_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                investigations_transformed.append(transformed)
     if ner_result and ner_result.get("investigations"):
         for e in ner_result["investigations"]:
-            investigations_transformed.append(transform_investigation_entity(e))
+            transformed = transform_investigation_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                investigations_transformed.append(transformed)
 
     # --- Vitals ---
     vitals_transformed = []
     if vital_signs:
         for e in vital_signs:
-            vitals_transformed.append(transform_vital_entity(e))
+            transformed = transform_vital_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                vitals_transformed.append(transformed)
     if ner_result and ner_result.get("vital_signs"):
         for e in ner_result["vital_signs"]:
-            vitals_transformed.append(transform_vital_entity(e))
+            transformed = transform_vital_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                vitals_transformed.append(transformed)
 
     # --- Procedures ---
     procedures = []
     for e in snomed_data.get("treatments", []):
-        procedures.append(transform_procedure_entity(e))
+        transformed = transform_procedure_entity(e, doc_text=doc_text)
+        if transformed is not None:
+            procedures.append(transformed)
     if ner_result and ner_result.get("procedures"):
         for e in ner_result["procedures"]:
-            procedures.append(transform_procedure_entity(e))
+            transformed = transform_procedure_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                procedures.append(transformed)
 
     # --- Referrals ---
     referrals = []
     if ner_result and ner_result.get("referrals"):
         for e in ner_result["referrals"]:
-            referrals.append(transform_referral_entity(e))
+            transformed = transform_referral_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                referrals.append(transformed)
 
     # --- GP Actions ---
     gp_actions = []
     if ner_result and ner_result.get("gp_actions"):
         for e in ner_result["gp_actions"]:
-            gp_actions.append(transform_action_entity(e, "gp_action", "gp_actions"))
-    # Add from actions_structured
+            transformed = transform_action_entity(e, "gp_action", "gp_actions", doc_text=doc_text)
+            if transformed is not None:
+                gp_actions.append(transformed)
+    # Add from actions_structured (these have text evidence from summarization)
     actions_struct = summaries.get("actions_structured", {})
     for action in actions_struct.get("gp_surgery_actions", {}).get("doctor", []):
-        gp_actions.append(transform_action_entity({"text": action}, "gp_action", "gp_actions"))
+        if action and isinstance(action, str) and action.strip():
+            # Create entity with action text as evidence
+            entity = {"text": action, "evidence": action, "start_pos": 0}
+            transformed = transform_action_entity(entity, "gp_action", "gp_actions", doc_text=doc_text)
+            if transformed is not None:
+                gp_actions.append(transformed)
 
     # --- Hospital Actions ---
     hospital_actions = []
     if ner_result and ner_result.get("hospital_actions"):
         for e in ner_result["hospital_actions"]:
-            hospital_actions.append(transform_action_entity(e, "hospital_action", "treatment"))
+            transformed = transform_action_entity(e, "hospital_action", "treatment", doc_text=doc_text)
+            if transformed is not None:
+                hospital_actions.append(transformed)
     for action in actions_struct.get("sender_actions", {}).get("doctor", []):
-        hospital_actions.append(transform_action_entity({"text": action}, "hospital_action", "treatment"))
+        if action and isinstance(action, str) and action.strip():
+            entity = {"text": action, "evidence": action, "start_pos": 0}
+            transformed = transform_action_entity(entity, "hospital_action", "treatment", doc_text=doc_text)
+            if transformed is not None:
+                hospital_actions.append(transformed)
 
     # --- Follow-up ---
     follow_up = []
     if ner_result and ner_result.get("follow_up_plan"):
         for e in ner_result["follow_up_plan"]:
-            follow_up.append(transform_followup_entity(e))
+            transformed = transform_followup_entity(e, doc_text=doc_text)
+            if transformed is not None:
+                follow_up.append(transformed)
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # BUILD CODING OUTPUT
+    # BUILD CODING OUTPUT (with evidence filtering)
     # ═══════════════════════════════════════════════════════════════════════════════
 
     all_snomed_entities = []
     for cat in ["diagnoses", "problems", "medications", "investigations", "treatments"]:
         for e in snomed_data.get(cat, []):
-            all_snomed_entities.append(transform_to_clinical_entity(e, cat))
+            transformed = transform_to_clinical_entity(e, cat, doc_text=doc_text)
+            if transformed is not None:
+                all_snomed_entities.append(transformed)
+
+    # Also filter validation_rejected for evidence
+    validation_rejected = []
+    for e in snomed_data.get("validation_rejected", []):
+        transformed = transform_to_clinical_entity(e, "rejected", doc_text=doc_text)
+        if transformed is not None:
+            validation_rejected.append(transformed)
 
     coding_output = {
         "snomed_codes": all_snomed_entities,
@@ -4345,10 +4525,7 @@ def build_standardized_output(
         "dm_d_codes": [],
         "total_codes": len(all_snomed_entities) + len(icd_codes),
         "mapping_confidence": snomed_data.get("snomed_confidence", 0),
-        "validation_rejected": [
-            transform_to_clinical_entity(e, "rejected")
-            for e in snomed_data.get("validation_rejected", [])
-        ],
+        "validation_rejected": validation_rejected,
     }
 
     # ═══════════════════════════════════════════════════════════════════════════════

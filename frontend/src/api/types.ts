@@ -68,17 +68,40 @@ export type ClinicalSection =
   | 'unknown';
 
 /**
- * Standardized clinical entity - ALL extracted entities follow this schema
+ * Evidence span - REQUIRED for every entity.
+ * Entities without evidence are discarded (no hallucination policy).
+ */
+export interface EvidenceSpan {
+  text: string;                      // The exact text span from document
+  page: number;                      // 1-indexed page number
+  line: number;                      // 1-indexed line number within page
+  sentence: string;                  // Full sentence containing the entity
+  char_start: number;                // Character offset start in document
+  char_end: number;                  // Character offset end in document
+}
+
+/**
+ * Standardized clinical entity - ALL extracted entities follow this schema.
+ *
+ * EVIDENCE REQUIREMENT: Every entity MUST have a valid evidence span.
+ * Entities without supporting evidence are discarded during extraction.
+ * This prevents hallucination and ensures traceability.
  */
 export interface ClinicalEntity {
   // Core identification
   text: string;                      // Original text as found in document
   normalized_text: string;           // Standardized/canonical form
 
-  // Ontology coding
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // EVIDENCE (REQUIRED) - No evidence = entity discarded
+  // ═══════════════════════════════════════════════════════════════════════════════
+  evidence: EvidenceSpan;            // REQUIRED: Source text span from document
+
+  // Ontology coding (must reference originating text via evidence)
   ontology_code: string | null;      // Code (e.g., "22298006" for MI)
   ontology_system: OntologySystem;   // Which coding system
   ontology_description?: string;     // Human-readable term from ontology
+  ontology_source_text?: string;     // Original text that was mapped to ontology
 
   // Confidence & validation
   confidence: number;                // 0.0-1.0 extraction confidence
@@ -91,19 +114,12 @@ export interface ClinicalEntity {
   temporal_status: TemporalStatus;   // When did this occur
   section: ClinicalSection;          // Which part of document
 
-  // Document position
-  page_number: number;               // 1-indexed page number
-  line_number?: number;              // Line within page
-  char_start?: number;               // Character offset start
-  char_end?: number;                 // Character offset end
-
-  // Additional context
-  evidence?: string;                 // Surrounding text snippet
-  attributes?: Record<string, string | number | boolean>;
-
   // Deduplication
   canonical_form?: string;           // Merged canonical name
   aliases?: string[];                // Alternative terms merged
+
+  // Additional context
+  attributes?: Record<string, string | number | boolean>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
