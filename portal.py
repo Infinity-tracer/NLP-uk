@@ -213,6 +213,17 @@ try:
 except ImportError:
     _HAS_MEDICATION_EXTRACTOR = False
 
+# Investigation Parser: Separates investigation names from findings
+try:
+    from investigation_parser import (
+        InvestigationParser,
+        ParsedInvestigation,
+        parse_investigations,
+    )
+    _HAS_INVESTIGATION_PARSER = True
+except ImportError:
+    _HAS_INVESTIGATION_PARSER = False
+
 
 def _prepare_pages(file_path: Path, out_dir: Path) -> list:
     """

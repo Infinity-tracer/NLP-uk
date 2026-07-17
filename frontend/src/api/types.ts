@@ -189,6 +189,37 @@ export interface Medication {
   structured?: StructuredMedicationData;
 }
 
+// Investigation category
+export type InvestigationCategory =
+  | 'blood_test'
+  | 'imaging'
+  | 'cardiology'
+  | 'microbiology'
+  | 'histology'
+  | 'endoscopy'
+  | 'pulmonary'
+  | 'urine'
+  | 'other';
+
+// Finding status
+export type FindingStatus =
+  | 'normal'
+  | 'abnormal'
+  | 'pending'
+  | 'not_done'
+  | 'unknown';
+
+// Parsed investigation with separated name and finding
+export interface ParsedInvestigation {
+  investigation: string;              // Investigation name (expanded)
+  investigation_abbrev: string | null; // Original abbreviation if used
+  finding: string | null;             // The result/finding
+  finding_status: FindingStatus;      // normal/abnormal/pending/unknown
+  category: InvestigationCategory;    // blood_test/imaging/cardiology/etc.
+  raw_text: string;                   // Original text
+  confidence: number;                 // Extraction confidence
+}
+
 export interface StructuredFields {
   admission_date?: string;
   discharge_date?: string;
@@ -384,6 +415,9 @@ export interface ProcessResult {
 
   // Clinical abbreviations (both forms stored)
   abbreviations?: AbbreviationResult;
+
+  // Parsed investigations with separated names and findings
+  parsed_investigations?: ParsedInvestigation[];
 }
 
 export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
