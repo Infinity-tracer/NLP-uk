@@ -1,289 +1,50 @@
-export interface PatientInfo {
-  name: string;
-  nhs_number: string;
-  dob: string;
-  sex: string;
-  address?: string;
-  hospital_number?: string;
-  gp_practice?: string;
-  gravida_parity?: string;
-  edd?: string;
-  gestational_age?: string;
-  pathways_urgency?: string;
-  presenting_complaint?: string;
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// NHS Clinical Document NLP Pipeline - TypeScript Types
+// Redesigned output schema with standardized clinical entities
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// Assertion status for clinical entities (negation detection)
-export type AssertionStatus = 'present' | 'absent' | 'historical' | 'family_history' | 'possible' | 'ruled_out';
+// ────────────────────────────────────────────────────────────────────────────────
+// CORE CLINICAL ENTITY (Standardized across all categories)
+// ────────────────────────────────────────────────────────────────────────────────
 
-// Temporal state for clinical entities
-export type TemporalState = 'current' | 'historical' | 'resolved' | 'suspected' | 'chronic' | 'acute';
+/**
+ * Assertion status for clinical entities (negation detection)
+ */
+export type AssertionStatus =
+  | 'present'        // Entity is affirmed/present
+  | 'absent'         // Negated (e.g., "no chest pain")
+  | 'historical'     // Past occurrence
+  | 'family_history' // Family member's condition
+  | 'possible'       // Uncertain/suspected
+  | 'ruled_out';     // Explicitly excluded
 
-// Clinical temporal category
-export type ClinicalTemporalCategory =
-  | 'current_diagnosis'
-  | 'past_medical_history'
-  | 'previous_surgery'
-  | 'resolved_symptom'
-  | 'current_symptom'
-  | 'chronic_disease'
-  | 'family_history'
-  | 'medication_history'
-  | 'current_medication'
-  | 'acute_presentation';
+/**
+ * Temporal status for clinical entities
+ */
+export type TemporalStatus =
+  | 'current'     // Active/ongoing
+  | 'historical'  // Past/resolved
+  | 'chronic'     // Long-standing
+  | 'acute'       // Recent onset
+  | 'resolved'    // No longer active
+  | 'suspected';  // Under investigation
 
-// SNOMED concept type
-export type SNOMEDConceptType =
-  | 'disorder'
-  | 'finding'
-  | 'clinical_finding'
-  | 'procedure'
-  | 'substance'
-  | 'product'
-  | 'morphology'
-  | 'body_structure'
-  | 'qualifier'
-  | 'observable'
-  | 'situation'
-  | 'event'
-  | 'unknown';
+/**
+ * Ontology system identifier
+ */
+export type OntologySystem =
+  | 'SNOMED-CT'
+  | 'ICD-10'
+  | 'dm+d'        // NHS dictionary of medicines and devices
+  | 'OPCS-4'      // Operative procedures
+  | 'READ'        // Read codes (legacy)
+  | 'LOCAL'       // Local/internal codes
+  | 'NONE';       // No ontology mapping
 
-export interface SNOMEDEntity {
-  text: string;
-  category: string;
-  snomed_code: string;
-  description: string;
-  confidence: number;
-  entity_id: string;
-  source: string;
-  clinical_category?: string;  // problems | treatments | medications | investigations | diagnoses
-  result?: string;             // For investigations: "Pending", "Normal", etc.
-  priority?: string;           // For investigations: "Urgent", "Routine"
-  snomed_description?: string; // Alternative description field
-  // Assertion status from negation detection
-  assertion?: AssertionStatus;           // present, absent, historical, family_history, possible, ruled_out
-  assertion_trigger?: string | null;     // The trigger phrase (e.g., "No", "Denies", "History of")
-  assertion_confidence?: number;         // Confidence in the assertion
-  // Temporal state from temporal reasoning
-  temporal_state?: TemporalState;        // current, historical, resolved, suspected, chronic, acute
-  temporal_trigger?: string | null;      // The trigger phrase (e.g., "History of", "Resolved", "Chronic")
-  temporal_confidence?: number;          // Confidence in the temporal classification
-  clinical_temporal_category?: ClinicalTemporalCategory;  // More specific category
-  time_reference?: string;               // Time reference (e.g., "2019", "3 years ago")
-  // SNOMED mapping pipeline info
-  concept_type?: SNOMEDConceptType;      // disorder, finding, procedure, etc.
-  spell_corrected?: boolean;             // True if term was spell-corrected
-  synonym_matched?: boolean;             // True if mapped via synonym
-  mapping_rejected?: boolean;            // True if mapping was rejected (low confidence)
-  rejection_reason?: string;             // Reason for rejection
-  // Deduplication fields
-  canonical_form?: string;               // Canonical form of the entity (e.g., "Electrocardiogram" for "ECG")
-  aliases?: string[];                    // Alternative names that were merged (e.g., ["ECG", "12-lead ECG"])
-  snomed_codes_all?: string[];           // All SNOMED codes from merged entities
-}
-
-// Temporal state distribution stats
-export interface TemporalStats {
-  current: number;
-  historical: number;
-  resolved: number;
-  suspected: number;
-  chronic: number;
-  acute: number;
-}
-
-// Validation-rejected entity (for debugging/audit)
-export interface RejectedEntity extends SNOMEDEntity {
-  validation_rejected: true;
-  rejection_reason: string;
-}
-
-export interface SNOMEDData {
-  // 5 clinical categories with SNOMED codes
-  problems: SNOMEDEntity[];       // Symptoms/issues (e.g., neck pain, tummy irritation)
-  treatments: SNOMEDEntity[];     // Therapeutic procedures (e.g., Mental Health treatment, Chemo)
-  medications: SNOMEDEntity[];    // Drugs (e.g., Thyroxine, Aspirin)
-  investigations: SNOMEDEntity[]; // Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio)
-  diagnoses: SNOMEDEntity[];      // Confirmed conditions (e.g., ulcerative colitis)
-  all_entities: SNOMEDEntity[];
-  used_fallback: boolean;
-  top3_fallback: SNOMEDEntity[];
-  used_summary_fallback?: boolean;
-  used_doctype_fallback?: boolean;
-  snomed_confidence?: number;
-  // Negation detection: entities that were filtered out (absent/ruled out)
-  negated_entities?: SNOMEDEntity[];
-  // Temporal reasoning: distribution of temporal states
-  temporal_stats?: TemporalStats;
-  // Medical validation: entities rejected for impossible mappings
-  validation_rejected?: RejectedEntity[];
-}
-
-// Structured medication data from medication extractor
-export interface StructuredMedicationData {
-  drug_name: string | null;
-  strength: string | null;       // e.g., "40mg"
-  dose: string | null;           // e.g., "2 tablets"
-  route: string | null;          // e.g., "oral", "intravenous"
-  frequency: string | null;      // Expanded: "twice daily"
-  frequency_code: string | null; // Original: "BD", "OD", "TDS"
-  duration: string | null;       // e.g., "7 days"
-  status: MedicationStatus;
-  form: string | null;           // e.g., "tablet", "capsule"
-  instructions: string | null;   // e.g., "with food"
-  confidence: number;
-}
-
-// Medication status
-export type MedicationStatus =
-  | 'current'
-  | 'discontinued'
-  | 'new'
-  | 'changed'
-  | 'on_hold'
-  | 'prn'
-  | 'unknown';
-
-// Route of administration
-export type RouteOfAdministration =
-  | 'oral'
-  | 'sublingual'
-  | 'buccal'
-  | 'topical'
-  | 'transdermal'
-  | 'inhalation'
-  | 'nebulised'
-  | 'nasal'
-  | 'ophthalmic'
-  | 'otic'
-  | 'rectal'
-  | 'vaginal'
-  | 'intravenous'
-  | 'intramuscular'
-  | 'subcutaneous'
-  | 'intradermal'
-  | 'intrathecal'
-  | 'epidural'
-  | 'peg'
-  | 'ng'
-  | 'unknown';
-
-// UK Prescribing frequency codes
-export type FrequencyCode =
-  | 'OD'    // Once daily
-  | 'BD'    // Twice daily
-  | 'TDS'   // Three times daily
-  | 'QDS'   // Four times daily
-  | 'PRN'   // As required
-  | 'STAT'  // Immediately
-  | 'OM'    // Every morning
-  | 'ON'    // At night
-  | 'NOCTE' // At night (Latin)
-  | 'Q2H'   // Every 2 hours
-  | 'Q4H'   // Every 4 hours
-  | 'Q6H'   // Every 6 hours
-  | 'Q8H'   // Every 8 hours
-  | 'Q12H'  // Every 12 hours
-  | 'WEEKLY'
-  | '2X WEEKLY'
-  | '3X WEEKLY'
-  | 'AC'    // Before meals
-  | 'PC'    // After meals
-  | 'CC'    // With food
-  | 'ALT'   // Alternate days
-  | 'CONT'; // Continuous
-
-export interface Medication {
-  name: string;
-  dose: string;
-  raw: string;
-  // Full structured data (when medication_extractor is available)
-  structured?: StructuredMedicationData;
-}
-
-// Investigation category
-export type InvestigationCategory =
-  | 'blood_test'
-  | 'imaging'
-  | 'cardiology'
-  | 'microbiology'
-  | 'histology'
-  | 'endoscopy'
-  | 'pulmonary'
-  | 'urine'
-  | 'other';
-
-// Finding status
-export type FindingStatus =
-  | 'normal'
-  | 'abnormal'
-  | 'pending'
-  | 'not_done'
-  | 'unknown';
-
-// Parsed investigation with separated name and finding
-export interface ParsedInvestigation {
-  investigation: string;              // Investigation name (expanded)
-  investigation_abbrev: string | null; // Original abbreviation if used
-  finding: string | null;             // The result/finding
-  finding_status: FindingStatus;      // normal/abnormal/pending/unknown
-  category: InvestigationCategory;    // blood_test/imaging/cardiology/etc.
-  raw_text: string;                   // Original text
-  confidence: number;                 // Extraction confidence
-}
-
-// Vital sign type
-export type VitalType =
-  | 'temperature'
-  | 'pulse'
-  | 'heart_rate'
-  | 'respiratory_rate'
-  | 'blood_pressure'
-  | 'systolic_bp'
-  | 'diastolic_bp'
-  | 'spo2'
-  | 'gcs'
-  | 'gcs_eye'
-  | 'gcs_verbal'
-  | 'gcs_motor'
-  | 'pain_score'
-  | 'avpu'
-  | 'weight'
-  | 'height'
-  | 'bmi'
-  | 'bsa'
-  | 'blood_glucose';
-
-// Vital sign status
-export type VitalStatus =
-  | 'normal'
-  | 'low'
-  | 'high'
-  | 'critical_low'
-  | 'critical_high'
-  | 'unknown';
-
-// Extracted vital sign
-export interface VitalSign {
-  vital_type: VitalType;              // Type of vital sign
-  value: string;                      // The measured value
-  numeric_value: number | null;       // Numeric value if parseable
-  unit: string;                       // Unit of measurement
-  timestamp: string | null;           // Timestamp if present
-  status: VitalStatus;                // normal/low/high/critical
-  raw_text: string;                   // Original text
-  confidence: number;                 // Extraction confidence
-  // Blood pressure components
-  systolic?: number;
-  diastolic?: number;
-  // GCS components
-  gcs_eye?: number;
-  gcs_verbal?: number;
-  gcs_motor?: number;
-}
-
-// Document section type
-export type SectionType =
+/**
+ * Document section where entity was found
+ */
+export type ClinicalSection =
   | 'presenting_complaint'
   | 'history_presenting_complaint'
   | 'past_medical_history'
@@ -303,57 +64,636 @@ export type SectionType =
   | 'follow_up'
   | 'referral'
   | 'prognosis'
-  | 'unknown'
-  | 'header';
-
-// Entity context based on section
-export type EntityContext =
-  | 'current_symptom'
-  | 'current_diagnosis'
-  | 'historical_disease'
-  | 'past_surgery'
-  | 'current_medication'
-  | 'historical_medication'
-  | 'allergy'
-  | 'social_factor'
-  | 'family_history'
-  | 'examination_finding'
-  | 'investigation_result'
-  | 'treatment_plan'
-  | 'discharge_medication'
-  | 'patient_advice'
-  | 'gp_action'
-  | 'follow_up_plan'
-  | 'suspected_diagnosis'
+  | 'header'
   | 'unknown';
 
-// Parsed document section
+/**
+ * Standardized clinical entity - ALL extracted entities follow this schema
+ */
+export interface ClinicalEntity {
+  // Core identification
+  text: string;                      // Original text as found in document
+  normalized_text: string;           // Standardized/canonical form
+
+  // Ontology coding
+  ontology_code: string | null;      // Code (e.g., "22298006" for MI)
+  ontology_system: OntologySystem;   // Which coding system
+  ontology_description?: string;     // Human-readable term from ontology
+
+  // Confidence & validation
+  confidence: number;                // 0.0-1.0 extraction confidence
+  mapping_confidence?: number;       // 0.0-1.0 ontology mapping confidence
+  validated: boolean;                // Passed medical validation
+  validation_note?: string;          // If rejected, why
+
+  // Clinical context
+  assertion_status: AssertionStatus; // Negation/affirmation
+  temporal_status: TemporalStatus;   // When did this occur
+  section: ClinicalSection;          // Which part of document
+
+  // Document position
+  page_number: number;               // 1-indexed page number
+  line_number?: number;              // Line within page
+  char_start?: number;               // Character offset start
+  char_end?: number;                 // Character offset end
+
+  // Additional context
+  evidence?: string;                 // Surrounding text snippet
+  attributes?: Record<string, string | number | boolean>;
+
+  // Deduplication
+  canonical_form?: string;           // Merged canonical name
+  aliases?: string[];                // Alternative terms merged
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// DOMAIN-SPECIFIC ENTITY EXTENSIONS
+// ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Diagnosis entity with additional clinical classification
+ */
+export interface DiagnosisEntity extends ClinicalEntity {
+  icd10_code?: string;               // ICD-10 mapping
+  icd10_description?: string;
+  severity?: 'mild' | 'moderate' | 'severe';
+  certainty?: 'confirmed' | 'provisional' | 'differential' | 'working';
+}
+
+/**
+ * Symptom entity with onset and characteristics
+ */
+export interface SymptomEntity extends ClinicalEntity {
+  onset?: string;                    // When started
+  duration?: string;                 // How long
+  severity?: string;                 // Patient-reported severity
+  character?: string;                // Nature of symptom
+  site?: string;                     // Body location
+  radiation?: string;                // Where it spreads
+  aggravating_factors?: string[];
+  relieving_factors?: string[];
+}
+
+/**
+ * Medication entity with dosing information
+ */
+export interface MedicationEntity extends ClinicalEntity {
+  // Drug identification
+  drug_name: string;                 // Generic/brand name
+  dm_d_code?: string;                // NHS dm+d code
+  bnf_code?: string;                 // BNF code
+
+  // Dosing
+  dose: string | null;               // Amount per administration
+  strength: string | null;           // Concentration (e.g., "40mg")
+  form: string | null;               // tablet/capsule/liquid etc.
+  route: string | null;              // oral/IV/IM etc.
+
+  // Frequency
+  frequency: string | null;          // Expanded (e.g., "twice daily")
+  frequency_code: string | null;     // Abbreviated (e.g., "BD")
+
+  // Status & duration
+  duration: string | null;           // Course length
+  status: MedicationStatus;          // current/stopped/new etc.
+  instructions: string | null;       // Special instructions
+}
+
+export type MedicationStatus =
+  | 'current'
+  | 'new'
+  | 'discontinued'
+  | 'changed'
+  | 'on_hold'
+  | 'prn'
+  | 'unknown';
+
+/**
+ * Investigation entity with results
+ */
+export interface InvestigationEntity extends ClinicalEntity {
+  investigation_name: string;        // Full name
+  investigation_abbrev?: string;     // Abbreviation (e.g., "FBC")
+
+  // Results
+  result: string | null;             // Result value/finding
+  result_status: 'normal' | 'abnormal' | 'pending' | 'not_done' | 'unknown';
+  reference_range?: string;          // Normal range
+  unit?: string;                     // Measurement unit
+
+  // Classification
+  category: InvestigationCategory;
+  priority?: 'urgent' | 'routine' | 'stat';
+  specimen_type?: string;
+}
+
+export type InvestigationCategory =
+  | 'blood_test'
+  | 'imaging'
+  | 'cardiology'
+  | 'microbiology'
+  | 'histology'
+  | 'endoscopy'
+  | 'pulmonary'
+  | 'urine'
+  | 'other';
+
+/**
+ * Vital sign entity
+ */
+export interface VitalEntity extends ClinicalEntity {
+  vital_type: VitalType;
+  value: string;
+  numeric_value: number | null;
+  unit: string;
+  status: VitalStatus;
+  timestamp?: string;
+
+  // BP specific
+  systolic?: number;
+  diastolic?: number;
+
+  // GCS specific
+  gcs_eye?: number;
+  gcs_verbal?: number;
+  gcs_motor?: number;
+}
+
+export type VitalType =
+  | 'temperature'
+  | 'pulse'
+  | 'heart_rate'
+  | 'respiratory_rate'
+  | 'blood_pressure'
+  | 'systolic_bp'
+  | 'diastolic_bp'
+  | 'spo2'
+  | 'gcs'
+  | 'pain_score'
+  | 'avpu'
+  | 'weight'
+  | 'height'
+  | 'bmi'
+  | 'blood_glucose';
+
+export type VitalStatus =
+  | 'normal'
+  | 'low'
+  | 'high'
+  | 'critical_low'
+  | 'critical_high'
+  | 'unknown';
+
+/**
+ * Procedure entity
+ */
+export interface ProcedureEntity extends ClinicalEntity {
+  procedure_name: string;
+  opcs4_code?: string;               // OPCS-4 code
+  opcs4_description?: string;
+
+  date_performed?: string;
+  surgeon?: string;
+  indication?: string;
+  findings?: string;
+  complications?: string;
+}
+
+/**
+ * Referral entity
+ */
+export interface ReferralEntity extends ClinicalEntity {
+  referral_type: 'routine' | 'urgent' | '2ww' | 'emergency';
+  specialty: string;
+  reason: string;
+  target_date?: string;
+  facility?: string;
+}
+
+/**
+ * Action entity (GP/Hospital/Patient actions)
+ */
+export interface ActionEntity extends ClinicalEntity {
+  action_type: 'gp_action' | 'hospital_action' | 'patient_action';
+  action_text: string;
+  responsible_party?: string;
+  due_date?: string;
+  priority?: 'urgent' | 'routine' | 'when_possible';
+}
+
+/**
+ * Follow-up entity
+ */
+export interface FollowUpEntity extends ClinicalEntity {
+  follow_up_type: 'appointment' | 'test' | 'review' | 'contact';
+  timeframe: string;
+  specialty?: string;
+  instructions?: string;
+  contact?: string;
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// OUTPUT SCHEMA - Main Result Structure
+// ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Document metadata
+ */
+export interface DocumentMetadata {
+  doc_id: string;
+  filename: string;
+  processed_at: string;
+  status: 'processing' | 'processed' | 'review_required' | 'error';
+  error?: string;
+
+  // Document properties
+  pages_processed: number;
+  document_type: DocumentType;
+  document_type_confidence: number;
+  hospital_trust: string;
+  is_sensitive: boolean;
+
+  // Pipeline info
+  pipeline_stages: PipelineStages;
+
+  // Preview
+  preview_pages: string[];
+  preview_image: string | null;
+}
+
+export type DocumentType =
+  | 'ed_discharge'
+  | 'clinic_letter'
+  | 'radiology'
+  | 'histopathology'
+  | 'operative_notes'
+  | 'referral_letter'
+  | 'gp_letter'
+  | 'mental_health'
+  | 'discharge_summary'
+  | 'unknown';
+
+export interface PipelineStages {
+  tier0?: PipelineStage;
+  tier1?: PipelineStage;
+  tier2?: PipelineStage;
+  track_a?: PipelineStage;
+  track_b?: PipelineStage;
+  hipaa?: PipelineStage;
+  ocr_normalization?: PipelineStage;
+  abbreviation_resolution?: PipelineStage;
+  structure?: PipelineStage;
+  ner?: PipelineStage;
+  nhs_parser?: PipelineStage;
+  extraction?: PipelineStage;
+  validation?: PipelineStage;
+}
+
+export interface PipelineStage {
+  status: 'done' | 'partial' | 'error' | 'skipped' | 'queued_for_layoutlmv3';
+  confidence?: number;
+  note?: string;
+  error?: string;
+  pages?: number;
+  chars_extracted?: number;
+  entities_found?: number;
+  phi_entities_detected?: number;
+  letter_type?: string;
+}
+
+/**
+ * Summary output
+ */
+export interface Summary {
+  summary: string;
+  confidence: number;
+}
+
+export interface Summaries {
+  clinician: Summary;
+  patient: Summary;
+  pharmacist: Summary;
+  follow_up_actions: string;
+}
+
+/**
+ * Patient information
+ */
+export interface PatientInfo {
+  name: string;
+  nhs_number: string;
+  dob: string;
+  sex: string;
+  address?: string;
+  hospital_number?: string;
+  gp_practice?: string;
+  gravida_parity?: string;
+  edd?: string;
+  gestational_age?: string;
+  pathways_urgency?: string;
+  presenting_complaint?: string;
+}
+
+/**
+ * Confidence scores breakdown
+ */
+export interface ConfidenceScores {
+  ocr: number;
+  ner: number;
+  snomed: number;
+  medication: number;
+  investigation: number;
+  summary: number;
+  classification: number;
+  overall: number;
+  threshold: number;
+  weights: {
+    ocr: number;
+    ner: number;
+    snomed: number;
+    medication: number;
+    investigation: number;
+    summary: number;
+    classification: number;
+  };
+}
+
+/**
+ * Coding output - ontology mappings
+ */
+export interface CodingOutput {
+  snomed_codes: ClinicalEntity[];     // All SNOMED-CT mappings
+  icd10_codes: string[];              // ICD-10 codes
+  opcs4_codes?: string[];             // Operative procedure codes
+  dm_d_codes?: string[];              // Medication codes
+
+  // Stats
+  total_codes: number;
+  mapping_confidence: number;
+  validation_rejected: ClinicalEntity[];  // Entities that failed validation
+}
+
+/**
+ * Main process result - redesigned output schema
+ */
+export interface ProcessResult {
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // METADATA
+  // ═══════════════════════════════════════════════════════════════════════════════
+  metadata: DocumentMetadata;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SUMMARY
+  // ═══════════════════════════════════════════════════════════════════════════════
+  summary: Summaries;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CLINICAL ENTITIES (Standardized schema)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /** Primary diagnoses identified */
+  diagnoses: DiagnosisEntity[];
+
+  /** Symptoms and complaints */
+  symptoms: SymptomEntity[];
+
+  /** Current and historical medications */
+  medications: MedicationEntity[];
+
+  /** Investigations/tests (labs, imaging, etc.) */
+  investigations: InvestigationEntity[];
+
+  /** Vital signs */
+  vitals: VitalEntity[];
+
+  /** Procedures performed or planned */
+  procedures: ProcedureEntity[];
+
+  /** Referrals made */
+  referrals: ReferralEntity[];
+
+  /** GP actions required */
+  gp_actions: ActionEntity[];
+
+  /** Hospital actions required */
+  hospital_actions: ActionEntity[];
+
+  /** Follow-up plans */
+  follow_up: FollowUpEntity[];
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CODING
+  // ═══════════════════════════════════════════════════════════════════════════════
+  coding: CodingOutput;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CONFIDENCE
+  // ═══════════════════════════════════════════════════════════════════════════════
+  confidence: ConfidenceScores;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PATIENT & DOCUMENT INFO
+  // ═══════════════════════════════════════════════════════════════════════════════
+  patient_info: PatientInfo;
+  extracted_text: string;
+  raw_ocr_text?: string;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // LEGACY COMPATIBILITY (to be deprecated)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // These fields maintain backward compatibility with existing frontend
+  doc_id: string;
+  filename: string;
+  processed_at: string;
+  status: 'processing' | 'processed' | 'review_required' | 'error';
+  error?: string;
+  pages_processed: number;
+  pipeline_stages: PipelineStages;
+  unified_confidence: number;
+  confidence_threshold: number;
+  requires_review: boolean;
+  confidence_scores?: ConfidenceScores;
+  letter_type: string;
+  hospital_trust: string;
+  is_sensitive: boolean;
+  preview_pages: string[];
+  preview_image: string | null;
+  structured: StructuredFields;
+  clinical_specifics: ClinicalSpecifics;
+  icd_codes: string[];
+  medications_raw: Medication[];
+  snomed: SNOMEDData;
+  summaries: Summaries;
+  actions_structured: ActionsStructured;
+  follow_up_actions: string;
+  phi_entity_count: number;
+  medical_ner?: MedicalNERResult;
+  abbreviations?: AbbreviationResult;
+  parsed_investigations?: ParsedInvestigation[];
+  vital_signs?: VitalSign[];
+  parsed_document?: ParsedDocument;
+  nhs_document_data?: NHSDocumentData;
+  event_date?: string;
+  letter_date?: string;
+  conclusion?: string;
+  recommendation?: string;
+  diary_events?: DiaryEvent[];
+  treatments?: TreatmentItem[];
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// LEGACY TYPES (Preserved for backward compatibility)
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface SNOMEDEntity {
+  text: string;
+  category: string;
+  snomed_code: string;
+  description: string;
+  confidence: number;
+  entity_id: string;
+  source: string;
+  clinical_category?: string;
+  result?: string;
+  priority?: string;
+  snomed_description?: string;
+  assertion?: AssertionStatus;
+  assertion_trigger?: string | null;
+  assertion_confidence?: number;
+  temporal_state?: TemporalStatus;
+  temporal_trigger?: string | null;
+  temporal_confidence?: number;
+  clinical_temporal_category?: ClinicalTemporalCategory;
+  time_reference?: string;
+  concept_type?: SNOMEDConceptType;
+  spell_corrected?: boolean;
+  synonym_matched?: boolean;
+  mapping_rejected?: boolean;
+  rejection_reason?: string;
+  canonical_form?: string;
+  aliases?: string[];
+  snomed_codes_all?: string[];
+}
+
+export type ClinicalTemporalCategory =
+  | 'current_diagnosis'
+  | 'past_medical_history'
+  | 'previous_surgery'
+  | 'resolved_symptom'
+  | 'current_symptom'
+  | 'chronic_disease'
+  | 'family_history'
+  | 'medication_history'
+  | 'current_medication'
+  | 'acute_presentation';
+
+export type SNOMEDConceptType =
+  | 'disorder'
+  | 'finding'
+  | 'clinical_finding'
+  | 'procedure'
+  | 'substance'
+  | 'product'
+  | 'morphology'
+  | 'body_structure'
+  | 'qualifier'
+  | 'observable'
+  | 'situation'
+  | 'event'
+  | 'unknown';
+
+export interface TemporalStats {
+  current: number;
+  historical: number;
+  resolved: number;
+  suspected: number;
+  chronic: number;
+  acute: number;
+}
+
+export interface RejectedEntity extends SNOMEDEntity {
+  validation_rejected: true;
+  rejection_reason: string;
+}
+
+export interface SNOMEDData {
+  problems: SNOMEDEntity[];
+  treatments: SNOMEDEntity[];
+  medications: SNOMEDEntity[];
+  investigations: SNOMEDEntity[];
+  diagnoses: SNOMEDEntity[];
+  all_entities: SNOMEDEntity[];
+  used_fallback: boolean;
+  top3_fallback: SNOMEDEntity[];
+  used_summary_fallback?: boolean;
+  used_doctype_fallback?: boolean;
+  snomed_confidence?: number;
+  negated_entities?: SNOMEDEntity[];
+  temporal_stats?: TemporalStats;
+  validation_rejected?: RejectedEntity[];
+}
+
+export interface StructuredMedicationData {
+  drug_name: string | null;
+  strength: string | null;
+  dose: string | null;
+  route: string | null;
+  frequency: string | null;
+  frequency_code: string | null;
+  duration: string | null;
+  status: MedicationStatus;
+  form: string | null;
+  instructions: string | null;
+  confidence: number;
+}
+
+export interface Medication {
+  name: string;
+  dose: string;
+  raw: string;
+  structured?: StructuredMedicationData;
+}
+
+export interface ParsedInvestigation {
+  investigation: string;
+  investigation_abbrev: string | null;
+  finding: string | null;
+  finding_status: 'normal' | 'abnormal' | 'pending' | 'not_done' | 'unknown';
+  category: InvestigationCategory;
+  raw_text: string;
+  confidence: number;
+}
+
+export interface VitalSign {
+  vital_type: VitalType;
+  value: string;
+  numeric_value: number | null;
+  unit: string;
+  timestamp: string | null;
+  status: VitalStatus;
+  raw_text: string;
+  confidence: number;
+  systolic?: number;
+  diastolic?: number;
+  gcs_eye?: number;
+  gcs_verbal?: number;
+  gcs_motor?: number;
+}
+
 export interface DocumentSection {
-  section_type: SectionType;
-  heading: string;                    // Original heading text
+  section_type: ClinicalSection;
+  heading: string;
   start_line: number;
   end_line: number;
-  content: string;                    // Section content
+  content: string;
   confidence: number;
 }
 
-// Section-aware entity
-export interface SectionEntity {
-  text: string;
-  section_type: SectionType;
-  entity_context: EntityContext;      // Derived from section
-  temporal_state: string;             // current/historical/resolved
-  assertion: string;                  // present/absent/possible
-  line_number: number;
-  section_heading: string;
-  confidence: number;
-}
-
-// Parsed document structure
 export interface ParsedDocument {
   sections: DocumentSection[];
-  section_order: SectionType[];
-  document_type: string | null;       // discharge_summary, clinic_letter, etc.
+  section_order: ClinicalSection[];
+  document_type: string | null;
   stats: Record<string, number>;
 }
 
@@ -371,76 +711,6 @@ export interface StructuredFields {
   procedure?: string;
   indication?: string;
   impression?: string;
-}
-
-export interface Summary {
-  summary: string;
-  confidence: number;
-}
-
-export interface RoleActions {
-  doctor: string[];
-  pharmacist: string[];
-  reception: string[];
-}
-
-export interface ActionsStructured {
-  sender_actions: RoleActions;
-  gp_surgery_actions: RoleActions;
-  patient_actions?: string[];
-  patient_booking?: string[];
-}
-
-export interface Summaries {
-  clinician: Summary;
-  patient: Summary;
-  pharmacist: Summary;
-  follow_up_actions: string;
-  actions_structured: ActionsStructured;
-  llm_confidence: number;
-}
-
-export interface PipelineStage {
-  status: 'done' | 'partial' | 'error' | 'skipped' | 'queued_for_layoutlmv3';
-  confidence?: number;
-  note?: string;
-  error?: string;
-  pages?: number;
-  chars_extracted?: number;
-  entities_found?: number;
-  phi_entities_detected?: number;
-  letter_type?: string;
-}
-
-export interface PipelineStages {
-  tier0?: PipelineStage;
-  tier1?: PipelineStage;
-  tier2?: PipelineStage;
-  track_a?: PipelineStage;
-  track_b?: PipelineStage;
-  hipaa?: PipelineStage;
-}
-
-// Component-based confidence scores
-export interface ConfidenceScores {
-  ocr: number;            // OCR/text extraction quality (0-1)
-  ner: number;            // Named entity recognition (0-1)
-  snomed: number;         // SNOMED coding accuracy (0-1)
-  medication: number;     // Medication extraction (0-1)
-  investigation: number;  // Investigation parsing (0-1)
-  summary: number;        // Summary generation (0-1)
-  classification: number; // Document type classification (0-1)
-  overall: number;        // Weighted overall confidence (0-1)
-  threshold: number;      // Current entity filter threshold (default 0.40)
-  weights: {
-    ocr: number;
-    ner: number;
-    snomed: number;
-    medication: number;
-    investigation: number;
-    summary: number;
-    classification: number;
-  };
 }
 
 export interface ClinicalSpecifics {
@@ -465,7 +735,6 @@ export interface InvestigationItem {
   snomed_code?: string;
 }
 
-// Resolved clinical abbreviation
 export interface ResolvedAbbreviation {
   abbreviation: string;
   expansion: string;
@@ -473,13 +742,11 @@ export interface ResolvedAbbreviation {
   position: number;
 }
 
-// Abbreviation resolution result
 export interface AbbreviationResult {
   resolved: ResolvedAbbreviation[];
   stats: Record<string, number>;
 }
 
-// Medical NER Entity (17 categories)
 export interface NEREntity {
   text: string;
   category: string;
@@ -490,19 +757,16 @@ export interface NEREntity {
   normalized_text?: string;
   attributes?: Record<string, string | number>;
   evidence?: string;
-  // Assertion status from negation detection
   assertion?: AssertionStatus;
   assertion_trigger?: string | null;
   assertion_confidence?: number;
-  // Temporal state from temporal reasoning
-  temporal_state?: TemporalState;
+  temporal_state?: TemporalStatus;
   temporal_trigger?: string | null;
   temporal_confidence?: number;
   clinical_temporal_category?: ClinicalTemporalCategory;
   time_reference?: string;
 }
 
-// Medical NER Results (17 distinct categories)
 export interface MedicalNERResult {
   diagnoses: NEREntity[];
   symptoms: NEREntity[];
@@ -524,71 +788,17 @@ export interface MedicalNERResult {
   stats: Record<string, number>;
 }
 
-export interface ProcessResult {
-  doc_id: string;
-  filename: string;
-  processed_at: string;
-  status: 'processing' | 'processed' | 'review_required' | 'error';
-  error?: string;
+export interface RoleActions {
+  doctor: string[];
+  pharmacist: string[];
+  reception: string[];
+}
 
-  pages_processed: number;
-  pipeline_stages: PipelineStages;
-  unified_confidence: number;
-  confidence_threshold: number;
-  requires_review: boolean;
-
-  // Component-based confidence scores
-  confidence_scores?: ConfidenceScores;
-
-  letter_type: string;
-  hospital_trust: string;
-  is_sensitive: boolean;
-
-  preview_pages: string[];
-  preview_image: string | null;
-
-  patient_info: PatientInfo;
-  structured: StructuredFields;
-  clinical_specifics: ClinicalSpecifics;
-
-  extracted_text: string;       // Normalized text (used for NLP)
-  raw_ocr_text?: string;        // Original OCR output before normalization
-  icd_codes: string[];
-  medications_raw: Medication[];
-
-  snomed: SNOMEDData;
-  summaries: Summaries;
-  actions_structured: ActionsStructured;
-  follow_up_actions: string;
-
-  phi_entity_count: number;
-
-  // Comprehensive extraction fields (Claude Sonnet 5)
-  event_date?: string;
-  letter_date?: string;
-  conclusion?: string;
-  recommendation?: string;
-  diary_events?: DiaryEvent[];
-  treatments?: TreatmentItem[];
-  investigations?: InvestigationItem[];
-
-  // Medical NER (17 categories)
-  medical_ner?: MedicalNERResult;
-
-  // Clinical abbreviations (both forms stored)
-  abbreviations?: AbbreviationResult;
-
-  // Parsed investigations with separated names and findings
-  parsed_investigations?: ParsedInvestigation[];
-
-  // Extracted vital signs
-  vital_signs?: VitalSign[];
-
-  // Section-parsed document structure
-  parsed_document?: ParsedDocument;
-
-  // NHS Document Parser - type-specific extraction
-  nhs_document_data?: NHSDocumentData;
+export interface ActionsStructured {
+  sender_actions: RoleActions;
+  gp_surgery_actions: RoleActions;
+  patient_actions?: string[];
+  patient_booking?: string[];
 }
 
 // NHS Document types
@@ -604,14 +814,12 @@ export type NHSDocumentTypeEnum =
   | 'discharge_summary'
   | 'unknown';
 
-// Extracted section from NHS document
 export interface NHSExtractedSection {
   name: string;
   content: string;
   confidence: number;
 }
 
-// ED Discharge specific data
 export interface EDDischargeData {
   triage_category?: string;
   arrival_time?: string;
@@ -621,7 +829,6 @@ export interface EDDischargeData {
   disposition?: string;
 }
 
-// Radiology specific data
 export interface RadiologyData {
   examination_type?: string;
   clinical_indication?: string;
@@ -631,7 +838,6 @@ export interface RadiologyData {
   comparison?: string;
 }
 
-// Histopathology specific data
 export interface HistopathologyData {
   specimen_type?: string;
   specimen_site?: string;
@@ -643,7 +849,6 @@ export interface HistopathologyData {
   margins?: string;
 }
 
-// Operative notes specific data
 export interface OperativeData {
   operation_name?: string;
   surgeon?: string;
@@ -657,7 +862,6 @@ export interface OperativeData {
   post_op_instructions?: string;
 }
 
-// Mental health specific data
 export interface MentalHealthData {
   mental_state?: string;
   risk_assessment?: string;
@@ -666,7 +870,6 @@ export interface MentalHealthData {
   care_plan?: string;
 }
 
-// Discharge summary specific data
 export interface DischargeSummaryData {
   admission_date?: string;
   discharge_date?: string;
@@ -678,7 +881,6 @@ export interface DischargeSummaryData {
   gp_actions?: string[];
 }
 
-// NHS Document parsed data
 export interface NHSDocumentData {
   document_type: NHSDocumentTypeEnum;
   document_type_name: string;
@@ -688,7 +890,6 @@ export interface NHSDocumentData {
   recipient?: string;
   signals_matched: string[];
   sections: NHSExtractedSection[];
-  // Type-specific data (only one will be present based on document_type)
   ed_specific?: EDDischargeData;
   radiology_specific?: RadiologyData;
   histopathology_specific?: HistopathologyData;
@@ -697,8 +898,11 @@ export interface NHSDocumentData {
   discharge_specific?: DischargeSummaryData;
 }
 
-export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
+// ────────────────────────────────────────────────────────────────────────────────
+// UI TYPES
+// ────────────────────────────────────────────────────────────────────────────────
 
+export type TabType = 'details' | 'coding' | 'followup' | 'gpactions';
 export type AppState = 'upload' | 'processing' | 'result';
 
 export const LETTER_TYPE_BUCKETS = [

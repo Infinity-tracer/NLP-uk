@@ -3909,6 +3909,597 @@ def extract_clinical_specifics(text: str, letter_type: str) -> dict:
     return extras
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# STANDARDIZED OUTPUT SCHEMA - Entity Transformers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def transform_to_clinical_entity(
+    entity: dict,
+    category: str,
+    section: str = "unknown",
+    page_number: int = 1
+) -> dict:
+    """
+    Transform any extracted entity to the standardized ClinicalEntity schema.
+
+    Required output fields:
+    - text, normalized_text, ontology_code, ontology_system, confidence,
+    - assertion_status, temporal_status, section, page_number
+    """
+    # Map assertion status
+    assertion_map = {
+        "present": "present",
+        "absent": "absent",
+        "negated": "absent",
+        "historical": "historical",
+        "family_history": "family_history",
+        "possible": "possible",
+        "suspected": "possible",
+        "ruled_out": "ruled_out",
+    }
+    raw_assertion = entity.get("assertion", "") or entity.get("assertion_status", "") or "present"
+    assertion_status = assertion_map.get(str(raw_assertion).lower(), "present")
+
+    # Map temporal status
+    temporal_map = {
+        "current": "current",
+        "historical": "historical",
+        "chronic": "chronic",
+        "acute": "acute",
+        "resolved": "resolved",
+        "suspected": "suspected",
+        "past": "historical",
+    }
+    raw_temporal = entity.get("temporal_state", "") or entity.get("temporal_status", "") or "current"
+    temporal_status = temporal_map.get(str(raw_temporal).lower(), "current")
+
+    # Determine ontology system
+    snomed_code = entity.get("snomed_code") or entity.get("ontology_code")
+    if snomed_code:
+        ontology_system = "SNOMED-CT"
+    elif entity.get("icd10_code"):
+        ontology_system = "ICD-10"
+        snomed_code = entity.get("icd10_code")
+    elif entity.get("dm_d_code"):
+        ontology_system = "dm+d"
+        snomed_code = entity.get("dm_d_code")
+    else:
+        ontology_system = "NONE"
+
+    # Build standardized entity
+    return {
+        # Core identification
+        "text": entity.get("text", ""),
+        "normalized_text": entity.get("normalized_text") or entity.get("canonical_form") or entity.get("description") or entity.get("text", ""),
+
+        # Ontology coding
+        "ontology_code": snomed_code,
+        "ontology_system": ontology_system,
+        "ontology_description": entity.get("snomed_description") or entity.get("description"),
+
+        # Confidence & validation
+        "confidence": float(entity.get("confidence", 0.5)),
+        "mapping_confidence": float(entity.get("assertion_confidence", entity.get("confidence", 0.5))),
+        "validated": not entity.get("mapping_rejected", False),
+        "validation_note": entity.get("rejection_reason"),
+
+        # Clinical context
+        "assertion_status": assertion_status,
+        "temporal_status": temporal_status,
+        "section": entity.get("section") or section,
+
+        # Document position
+        "page_number": page_number,
+        "line_number": entity.get("line_number"),
+        "char_start": entity.get("start_pos"),
+        "char_end": entity.get("end_pos"),
+
+        # Additional context
+        "evidence": entity.get("evidence"),
+        "attributes": entity.get("attributes"),
+
+        # Deduplication
+        "canonical_form": entity.get("canonical_form"),
+        "aliases": entity.get("aliases"),
+    }
+
+
+def transform_diagnosis_entity(entity: dict, section: str = "diagnosis", page_number: int = 1) -> dict:
+    """Transform to DiagnosisEntity schema."""
+    base = transform_to_clinical_entity(entity, "diagnosis", section, page_number)
+    base.update({
+        "icd10_code": entity.get("icd10_code"),
+        "icd10_description": entity.get("icd10_description"),
+        "severity": entity.get("severity"),
+        "certainty": entity.get("certainty", "confirmed" if base["assertion_status"] == "present" else "differential"),
+    })
+    return base
+
+
+def transform_symptom_entity(entity: dict, section: str = "presenting_complaint", page_number: int = 1) -> dict:
+    """Transform to SymptomEntity schema."""
+    base = transform_to_clinical_entity(entity, "symptom", section, page_number)
+    attrs = entity.get("attributes", {}) or {}
+    base.update({
+        "onset": attrs.get("onset"),
+        "duration": attrs.get("duration"),
+        "severity": attrs.get("severity"),
+        "character": attrs.get("character"),
+        "site": attrs.get("site") or attrs.get("location"),
+        "radiation": attrs.get("radiation"),
+        "aggravating_factors": attrs.get("aggravating_factors"),
+        "relieving_factors": attrs.get("relieving_factors"),
+    })
+    return base
+
+
+def transform_medication_entity(entity: dict, section: str = "medication", page_number: int = 1) -> dict:
+    """Transform to MedicationEntity schema."""
+    base = transform_to_clinical_entity(entity, "medication", section, page_number)
+
+    # Get structured medication data if available
+    structured = entity.get("structured", {}) or {}
+
+    # Determine medication status
+    status_map = {
+        "current": "current",
+        "discontinued": "discontinued",
+        "new": "new",
+        "changed": "changed",
+        "on_hold": "on_hold",
+        "prn": "prn",
+    }
+    raw_status = structured.get("status") or entity.get("status", "unknown")
+
+    base.update({
+        "drug_name": structured.get("drug_name") or entity.get("name") or entity.get("text"),
+        "dm_d_code": entity.get("dm_d_code"),
+        "bnf_code": entity.get("bnf_code"),
+        "dose": structured.get("dose") or entity.get("dose"),
+        "strength": structured.get("strength"),
+        "form": structured.get("form"),
+        "route": structured.get("route"),
+        "frequency": structured.get("frequency"),
+        "frequency_code": structured.get("frequency_code"),
+        "duration": structured.get("duration"),
+        "status": status_map.get(str(raw_status).lower(), "unknown"),
+        "instructions": structured.get("instructions"),
+    })
+    return base
+
+
+def transform_investigation_entity(entity: dict, section: str = "investigations", page_number: int = 1) -> dict:
+    """Transform to InvestigationEntity schema."""
+    base = transform_to_clinical_entity(entity, "investigation", section, page_number)
+
+    # Map finding status
+    status_map = {
+        "normal": "normal",
+        "abnormal": "abnormal",
+        "pending": "pending",
+        "not_done": "not_done",
+    }
+    raw_status = entity.get("finding_status") or entity.get("result_status", "unknown")
+
+    # Map category
+    category_map = {
+        "blood_test": "blood_test",
+        "imaging": "imaging",
+        "cardiology": "cardiology",
+        "microbiology": "microbiology",
+        "histology": "histology",
+        "endoscopy": "endoscopy",
+        "pulmonary": "pulmonary",
+        "urine": "urine",
+    }
+    raw_category = entity.get("category", "other")
+
+    base.update({
+        "investigation_name": entity.get("investigation") or entity.get("text"),
+        "investigation_abbrev": entity.get("investigation_abbrev"),
+        "result": entity.get("finding") or entity.get("result"),
+        "result_status": status_map.get(str(raw_status).lower(), "unknown"),
+        "reference_range": entity.get("reference_range"),
+        "unit": entity.get("unit"),
+        "category": category_map.get(str(raw_category).lower(), "other"),
+        "priority": entity.get("priority"),
+        "specimen_type": entity.get("specimen_type"),
+    })
+    return base
+
+
+def transform_vital_entity(entity: dict, section: str = "examination", page_number: int = 1) -> dict:
+    """Transform to VitalEntity schema."""
+    base = transform_to_clinical_entity(entity, "vital", section, page_number)
+
+    base.update({
+        "vital_type": entity.get("vital_type"),
+        "value": entity.get("value"),
+        "numeric_value": entity.get("numeric_value"),
+        "unit": entity.get("unit", ""),
+        "status": entity.get("status", "unknown"),
+        "timestamp": entity.get("timestamp"),
+        "systolic": entity.get("systolic"),
+        "diastolic": entity.get("diastolic"),
+        "gcs_eye": entity.get("gcs_eye"),
+        "gcs_verbal": entity.get("gcs_verbal"),
+        "gcs_motor": entity.get("gcs_motor"),
+    })
+    return base
+
+
+def transform_procedure_entity(entity: dict, section: str = "treatment", page_number: int = 1) -> dict:
+    """Transform to ProcedureEntity schema."""
+    base = transform_to_clinical_entity(entity, "procedure", section, page_number)
+
+    base.update({
+        "procedure_name": entity.get("text"),
+        "opcs4_code": entity.get("opcs4_code"),
+        "opcs4_description": entity.get("opcs4_description"),
+        "date_performed": entity.get("date_performed"),
+        "surgeon": entity.get("surgeon"),
+        "indication": entity.get("indication"),
+        "findings": entity.get("findings"),
+        "complications": entity.get("complications"),
+    })
+    return base
+
+
+def transform_referral_entity(entity: dict, section: str = "referral", page_number: int = 1) -> dict:
+    """Transform to ReferralEntity schema."""
+    base = transform_to_clinical_entity(entity, "referral", section, page_number)
+
+    # Map referral type
+    type_map = {"routine": "routine", "urgent": "urgent", "2ww": "2ww", "emergency": "emergency"}
+    raw_type = entity.get("referral_type", "routine")
+
+    base.update({
+        "referral_type": type_map.get(str(raw_type).lower(), "routine"),
+        "specialty": entity.get("specialty") or entity.get("text"),
+        "reason": entity.get("reason") or "",
+        "target_date": entity.get("target_date"),
+        "facility": entity.get("facility"),
+    })
+    return base
+
+
+def transform_action_entity(
+    entity: dict,
+    action_type: str = "gp_action",
+    section: str = "gp_actions",
+    page_number: int = 1
+) -> dict:
+    """Transform to ActionEntity schema."""
+    base = transform_to_clinical_entity(entity, "action", section, page_number)
+
+    base.update({
+        "action_type": action_type,
+        "action_text": entity.get("text") or entity.get("action_text", ""),
+        "responsible_party": entity.get("responsible_party"),
+        "due_date": entity.get("due_date"),
+        "priority": entity.get("priority", "routine"),
+    })
+    return base
+
+
+def transform_followup_entity(entity: dict, section: str = "follow_up", page_number: int = 1) -> dict:
+    """Transform to FollowUpEntity schema."""
+    base = transform_to_clinical_entity(entity, "follow_up", section, page_number)
+
+    # Map follow-up type
+    type_map = {"appointment": "appointment", "test": "test", "review": "review", "contact": "contact"}
+    raw_type = entity.get("follow_up_type", "review")
+
+    base.update({
+        "follow_up_type": type_map.get(str(raw_type).lower(), "review"),
+        "timeframe": entity.get("timeframe") or entity.get("text", ""),
+        "specialty": entity.get("specialty"),
+        "instructions": entity.get("instructions"),
+        "contact": entity.get("contact"),
+    })
+    return base
+
+
+def build_standardized_output(
+    doc_id: str,
+    filename: str,
+    status: str,
+    pages_processed: int,
+    pipeline_stages: dict,
+    patient_info: dict,
+    summaries: dict,
+    snomed_data: dict,
+    medications: list,
+    investigations: list,
+    vitals: list,
+    ner_result: dict,
+    confidence_scores: dict,
+    letter_type: str,
+    hospital_trust: str,
+    is_sensitive: bool,
+    preview_pages: list,
+    extracted_text: str,
+    raw_ocr_text: str,
+    nhs_parsed: dict,
+    comprehensive: dict,
+    struct_fields: dict,
+    clinical_extras: dict,
+    icd_codes: list,
+    phi_entity_count: int,
+    unified_confidence: float,
+    type_threshold: float,
+    requires_review: bool,
+    abbreviation_result=None,
+    parsed_investigations: list = None,
+    vital_signs: list = None,
+    parsed_document: dict = None,
+) -> dict:
+    """
+    Build the standardized output schema with all clinical entities.
+    Returns both new standardized format AND legacy fields for backward compatibility.
+    """
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # TRANSFORM ENTITIES TO STANDARDIZED SCHEMA
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # --- Diagnoses ---
+    diagnoses = []
+    for e in snomed_data.get("diagnoses", []):
+        diagnoses.append(transform_diagnosis_entity(e))
+    # Add from NER if available
+    if ner_result and ner_result.get("diagnoses"):
+        for e in ner_result["diagnoses"]:
+            diagnoses.append(transform_diagnosis_entity(e))
+
+    # --- Symptoms ---
+    symptoms = []
+    for e in snomed_data.get("problems", []):
+        symptoms.append(transform_symptom_entity(e))
+    if ner_result:
+        for e in ner_result.get("symptoms", []):
+            symptoms.append(transform_symptom_entity(e))
+        for e in ner_result.get("signs", []):
+            symptoms.append(transform_symptom_entity(e, section="examination"))
+
+    # --- Medications ---
+    medications_transformed = []
+    for e in snomed_data.get("medications", []):
+        medications_transformed.append(transform_medication_entity(e))
+    for med in medications:
+        medications_transformed.append(transform_medication_entity(med))
+    if ner_result and ner_result.get("medications"):
+        for e in ner_result["medications"]:
+            medications_transformed.append(transform_medication_entity(e))
+
+    # --- Investigations ---
+    investigations_transformed = []
+    for e in snomed_data.get("investigations", []):
+        investigations_transformed.append(transform_investigation_entity(e))
+    if parsed_investigations:
+        for e in parsed_investigations:
+            investigations_transformed.append(transform_investigation_entity(e))
+    if ner_result and ner_result.get("investigations"):
+        for e in ner_result["investigations"]:
+            investigations_transformed.append(transform_investigation_entity(e))
+
+    # --- Vitals ---
+    vitals_transformed = []
+    if vital_signs:
+        for e in vital_signs:
+            vitals_transformed.append(transform_vital_entity(e))
+    if ner_result and ner_result.get("vital_signs"):
+        for e in ner_result["vital_signs"]:
+            vitals_transformed.append(transform_vital_entity(e))
+
+    # --- Procedures ---
+    procedures = []
+    for e in snomed_data.get("treatments", []):
+        procedures.append(transform_procedure_entity(e))
+    if ner_result and ner_result.get("procedures"):
+        for e in ner_result["procedures"]:
+            procedures.append(transform_procedure_entity(e))
+
+    # --- Referrals ---
+    referrals = []
+    if ner_result and ner_result.get("referrals"):
+        for e in ner_result["referrals"]:
+            referrals.append(transform_referral_entity(e))
+
+    # --- GP Actions ---
+    gp_actions = []
+    if ner_result and ner_result.get("gp_actions"):
+        for e in ner_result["gp_actions"]:
+            gp_actions.append(transform_action_entity(e, "gp_action", "gp_actions"))
+    # Add from actions_structured
+    actions_struct = summaries.get("actions_structured", {})
+    for action in actions_struct.get("gp_surgery_actions", {}).get("doctor", []):
+        gp_actions.append(transform_action_entity({"text": action}, "gp_action", "gp_actions"))
+
+    # --- Hospital Actions ---
+    hospital_actions = []
+    if ner_result and ner_result.get("hospital_actions"):
+        for e in ner_result["hospital_actions"]:
+            hospital_actions.append(transform_action_entity(e, "hospital_action", "treatment"))
+    for action in actions_struct.get("sender_actions", {}).get("doctor", []):
+        hospital_actions.append(transform_action_entity({"text": action}, "hospital_action", "treatment"))
+
+    # --- Follow-up ---
+    follow_up = []
+    if ner_result and ner_result.get("follow_up_plan"):
+        for e in ner_result["follow_up_plan"]:
+            follow_up.append(transform_followup_entity(e))
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BUILD CODING OUTPUT
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    all_snomed_entities = []
+    for cat in ["diagnoses", "problems", "medications", "investigations", "treatments"]:
+        for e in snomed_data.get(cat, []):
+            all_snomed_entities.append(transform_to_clinical_entity(e, cat))
+
+    coding_output = {
+        "snomed_codes": all_snomed_entities,
+        "icd10_codes": icd_codes,
+        "opcs4_codes": [],
+        "dm_d_codes": [],
+        "total_codes": len(all_snomed_entities) + len(icd_codes),
+        "mapping_confidence": snomed_data.get("snomed_confidence", 0),
+        "validation_rejected": [
+            transform_to_clinical_entity(e, "rejected")
+            for e in snomed_data.get("validation_rejected", [])
+        ],
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BUILD METADATA
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Determine document type from NHS parser or letter_type
+    doc_type = "unknown"
+    doc_type_confidence = 0.5
+    if nhs_parsed:
+        doc_type = nhs_parsed.get("document_type", "unknown")
+        doc_type_confidence = nhs_parsed.get("document_type_confidence", 0.5)
+    elif letter_type:
+        # Map legacy letter_type to document_type
+        type_map = {
+            "ED Discharge": "ed_discharge",
+            "Clinic Letter": "clinic_letter",
+            "Radiology": "radiology",
+            "Histopathology": "histopathology",
+            "Operative": "operative_notes",
+            "Discharge Summary": "discharge_summary",
+            "Mental Health": "mental_health",
+        }
+        for k, v in type_map.items():
+            if k.lower() in letter_type.lower():
+                doc_type = v
+                doc_type_confidence = 0.7
+                break
+
+    metadata = {
+        "doc_id": doc_id,
+        "filename": filename,
+        "processed_at": datetime.now().isoformat(),
+        "status": status,
+        "pages_processed": pages_processed,
+        "document_type": doc_type,
+        "document_type_confidence": doc_type_confidence,
+        "hospital_trust": hospital_trust,
+        "is_sensitive": is_sensitive,
+        "pipeline_stages": pipeline_stages,
+        "preview_pages": preview_pages,
+        "preview_image": preview_pages[0] if preview_pages else None,
+    }
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BUILD FINAL OUTPUT (New + Legacy fields)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    result = {
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # NEW STANDARDIZED SCHEMA
+        # ═══════════════════════════════════════════════════════════════════════════════
+        "metadata": metadata,
+        "summary": summaries,
+        "diagnoses": diagnoses,
+        "symptoms": symptoms,
+        "medications": medications_transformed,
+        "investigations": investigations_transformed,
+        "vitals": vitals_transformed,
+        "procedures": procedures,
+        "referrals": referrals,
+        "gp_actions": gp_actions,
+        "hospital_actions": hospital_actions,
+        "follow_up": follow_up,
+        "coding": coding_output,
+        "confidence": confidence_scores,
+        "patient_info": patient_info,
+        "extracted_text": extracted_text[:8000],
+        "raw_ocr_text": raw_ocr_text[:8000] if raw_ocr_text else extracted_text[:8000],
+
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # LEGACY COMPATIBILITY FIELDS
+        # ═══════════════════════════════════════════════════════════════════════════════
+        "doc_id": doc_id,
+        "filename": filename,
+        "processed_at": datetime.now().isoformat(),
+        "status": status,
+        "pages_processed": pages_processed,
+        "pipeline_stages": pipeline_stages,
+        "unified_confidence": unified_confidence,
+        "confidence_threshold": type_threshold,
+        "requires_review": requires_review,
+        "confidence_scores": confidence_scores,
+        "letter_type": letter_type,
+        "hospital_trust": hospital_trust,
+        "is_sensitive": is_sensitive,
+        "preview_pages": preview_pages,
+        "preview_image": preview_pages[0] if preview_pages else None,
+        "structured": struct_fields,
+        "clinical_specifics": clinical_extras,
+        "icd_codes": icd_codes,
+        "medications_raw": medications,
+        "snomed": {
+            "problems": snomed_data.get("problems", []),
+            "treatments": snomed_data.get("treatments", []),
+            "medications": snomed_data.get("medications", []),
+            "investigations": snomed_data.get("investigations", []),
+            "diagnoses": snomed_data.get("diagnoses", []),
+            "all_entities": snomed_data.get("all_entities", [])[:30],
+            "snomed_confidence": snomed_data.get("snomed_confidence", 0),
+            "used_fallback": snomed_data.get("used_fallback", False),
+            "top3_fallback": snomed_data.get("top3_fallback", []),
+            "used_summary_fallback": snomed_data.get("used_summary_fallback", False),
+            "used_doctype_fallback": snomed_data.get("used_doctype_fallback", False),
+            "negated_entities": snomed_data.get("negated_entities", [])[:20],
+            "temporal_stats": snomed_data.get("temporal_stats", {}),
+            "validation_rejected": snomed_data.get("validation_rejected", []),
+        },
+        "summaries": summaries,
+        "actions_structured": summaries.get("actions_structured", {
+            "sender_actions": {"doctor": [], "pharmacist": [], "reception": []},
+            "gp_surgery_actions": {"doctor": [], "pharmacist": [], "reception": []},
+        }),
+        "follow_up_actions": summaries.get("follow_up_actions", ""),
+        "phi_entity_count": phi_entity_count,
+        "event_date": comprehensive.get("event_date", "") or struct_fields.get("admission_date", ""),
+        "letter_date": comprehensive.get("letter_date", "") or struct_fields.get("discharge_date", ""),
+        "conclusion": comprehensive.get("conclusion", ""),
+        "recommendation": comprehensive.get("recommendation", ""),
+        "diary_events": comprehensive.get("diary_events", []),
+        "treatments": comprehensive.get("treatments", []),
+    }
+
+    # Add optional fields if available
+    if ner_result:
+        result["medical_ner"] = ner_result
+    if abbreviation_result:
+        result["abbreviations"] = {
+            "resolved": [
+                {
+                    "abbreviation": a.abbreviation,
+                    "expansion": a.expansion,
+                    "category": a.category.value,
+                    "position": a.start_pos,
+                }
+                for a in abbreviation_result.resolved_abbreviations
+            ],
+            "stats": abbreviation_result.stats,
+        }
+    if parsed_investigations:
+        result["parsed_investigations"] = parsed_investigations
+    if vital_signs:
+        result["vital_signs"] = vital_signs
+    if parsed_document:
+        result["parsed_document"] = parsed_document
+    if nhs_parsed:
+        result["nhs_document_data"] = nhs_parsed
+
+    return result
+
+
 def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     """
     End-to-end auto pipeline (SRS §7 workflow).
@@ -4537,7 +5128,71 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
     if nhs_parsed:
         result["nhs_document_data"] = nhs_parsed
 
-    return result
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # BUILD STANDARDIZED OUTPUT (New schema + legacy compatibility)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # Prepare NER result dict from the ner_result object
+    ner_dict = None
+    if ner_result:
+        ner_dict = result.get("medical_ner", {})
+
+    # Prepare parsed investigations list
+    parsed_inv_list = None
+    if _HAS_INVESTIGATION_PARSER:
+        parsed_inv_list = result.get("parsed_investigations")
+
+    # Prepare vital signs list
+    vital_signs_list = None
+    if _HAS_VITALS_EXTRACTOR:
+        vital_signs_list = result.get("vital_signs")
+
+    # Prepare parsed document
+    parsed_doc = None
+    if _HAS_SECTION_PARSER:
+        parsed_doc = result.get("parsed_document")
+
+    # Build the final standardized result
+    final_result = build_standardized_output(
+        doc_id=doc_id,
+        filename=upload_path.name,
+        status=result["status"],
+        pages_processed=result["pages_processed"],
+        pipeline_stages=result["pipeline_stages"],
+        patient_info=patient_info,
+        summaries=summaries,
+        snomed_data=snomed,
+        medications=medications,
+        investigations=comprehensive.get("investigations", []),
+        vitals=[],  # Will be populated from vital_signs_list
+        ner_result=ner_dict,
+        confidence_scores=component_confidences,
+        letter_type=letter_type,
+        hospital_trust=hospital_trust,
+        is_sensitive=contains_sensitive_content(doc_text),
+        preview_pages=result["preview_pages"],
+        extracted_text=doc_text,
+        raw_ocr_text=raw_ocr_text if _HAS_OCR_NORMALIZER else doc_text,
+        nhs_parsed=nhs_parsed,
+        comprehensive=comprehensive,
+        struct_fields=struct_fields,
+        clinical_extras=clinical_extras,
+        icd_codes=icd_codes,
+        phi_entity_count=len(phi_entities),
+        unified_confidence=round(unified, 3),
+        type_threshold=type_threshold,
+        requires_review=result["requires_review"],
+        abbreviation_result=abbreviation_result,
+        parsed_investigations=parsed_inv_list,
+        vital_signs=vital_signs_list,
+        parsed_document=parsed_doc,
+    )
+
+    # Preserve any additional fields that were added during processing
+    for key in ["confidence_breakdown", "validation_warnings"]:
+        if key in result:
+            final_result[key] = result[key]
+
+    return final_result
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
