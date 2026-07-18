@@ -78,18 +78,13 @@ export default function DetailsTab({ result }: DetailsTabProps) {
             </span>
           )}
         </div>
-        {predictedBucket && (
-          <div className="text-xs text-gray-500 mb-1.5">
-            Predicted as <strong className="text-nhs-dark">{result.letter_type}</strong>
-            {isOverride && (
-              <button
-                onClick={() => setSelectedBucket(predictedBucket)}
-                className="ml-2 text-nhs-blue hover:underline"
-              >
-                Reset to prediction
-              </button>
-            )}
-          </div>
+        {isOverride && predictedBucket && (
+          <button
+            onClick={() => setSelectedBucket(predictedBucket)}
+            className="text-xs text-nhs-blue hover:underline mb-1"
+          >
+            Reset to auto-detected
+          </button>
         )}
         <select
           value={selectedBucket}
@@ -104,7 +99,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
           ))}
         </select>
         <p className="text-[10px] text-gray-400 mt-1">
-          Dropdown is a fallback override if the prediction is wrong.
+          Select or change the letter type as needed.
         </p>
       </div>
 
