@@ -1333,8 +1333,9 @@ def run_comprehend_medical(text: str) -> dict:
         }
 
         # Try pattern for "Diagnosis\nPost-op Diagnosis\n* Haemorrhoids [K64.9]"
+        # Use DOTALL so .* can match across newlines
         diag_section_match = _re_diag.search(
-            r'(?:Post-?op\s+)?Diagnosis\s*\n.*?\*\s*([A-Za-z][^\[\n]{2,40})\s*\[([A-Z]\d+\.?\d*)\]',
+            r'Diagnosis\s*[\n\r](?:.*?[\n\r])*?\s*\*\s*([A-Za-z][^\[\n]{2,40})\s*\[([A-Z]\d+\.?\d*)\]',
             text, _re_diag.IGNORECASE | _re_diag.MULTILINE
         )
 
