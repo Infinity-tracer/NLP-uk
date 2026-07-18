@@ -5831,12 +5831,10 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
               <span>Letter type</span>
               <span id="letter-type-pred-badge" style="display:none;font-size:10px;font-weight:700;letter-spacing:.3px;background:#e6f7ef;color:#00703c;border:1px solid #b3e8cf;padding:2px 8px;border-radius:10px;text-transform:none">Auto-detected</span>
               <span id="letter-type-override-badge" style="display:none;font-size:10px;font-weight:700;letter-spacing:.3px;background:#fff3e0;color:#c77700;border:1px solid #ffe0a3;padding:2px 8px;border-radius:10px;text-transform:none">Manual override</span>
+              <a href="#" id="letter-type-reset" style="margin-left:6px;color:var(--nhs-blue);text-decoration:none;font-size:11px;display:none">Reset</a>
             </div>
-            <div id="letter-type-auto-line" style="display:none;font-size:11px;color:var(--muted);margin-bottom:6px">
-              Predicted as <strong id="letter-type-raw" style="color:var(--nhs-dark)">—</strong>
-              → bucketed to <strong id="letter-type-bucket" style="color:var(--nhs-dark)">—</strong>
-              <a href="#" id="letter-type-reset" style="margin-left:6px;color:var(--nhs-blue);text-decoration:none;display:none">Reset to prediction</a>
-            </div>
+            <!-- Hidden elements for compatibility with existing JS -->
+            <div id="letter-type-auto-line" style="display:none"><span id="letter-type-raw"></span><span id="letter-type-bucket"></span></div>
             <select class="field-input" id="field-letter-type" style="cursor:pointer;background:#fff">
               <option value="">Select letter type…</option>
               <option data-bucket-key="HOSP" value="Hospital Discharge Summary (after admission into hospital)">Hospital Discharge Summary (after admission into hospital)</option>
@@ -5850,7 +5848,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
               <option data-bucket-key="OOH"  value="Out of hours (East Berkshire Primary Care)">Out of hours (East Berkshire Primary Care)</option>
               <option data-bucket-key="MISC" value="Miscellaneous">Miscellaneous</option>
             </select>
-            <div style="font-size:10px;color:var(--muted);margin-top:4px">Dropdown is a fallback override if the prediction is wrong.</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Select or change the letter type as needed.</div>
           </div>
           <div style="display:flex;gap:10px">
             <div class="field-group" style="flex:1">
@@ -7060,23 +7058,15 @@ let _predictedRaw    = '';
 function applyPredictedLetterType(rawLetterType, bucketLabel) {
   _predictedRaw    = rawLetterType || '';
   _predictedBucket = bucketLabel   || '';
-  const rawEl      = document.getElementById('letter-type-raw');
-  const bucketEl   = document.getElementById('letter-type-bucket');
-  const autoLine   = document.getElementById('letter-type-auto-line');
   const predBadge  = document.getElementById('letter-type-pred-badge');
   const overBadge  = document.getElementById('letter-type-override-badge');
   const resetLink  = document.getElementById('letter-type-reset');
-  if (rawEl)    rawEl.textContent    = rawLetterType || '—';
-  if (bucketEl) bucketEl.textContent = bucketLabel   || '—';
-  // Drive auto-detected indicators off the actual predicted bucket (not the
-  // raw letter type). Otherwise the dropdown can be silently auto-set to a
-  // bucket while the "Auto-detected" badge and explainer line are hidden
-  // because rawLetterType happened to be empty.
+  // Show auto-detected badge if we have a prediction
   const hasPrediction = !!_predictedBucket;
-  if (autoLine) autoLine.style.display = hasPrediction ? '' : 'none';
   if (predBadge) predBadge.style.display = hasPrediction ? '' : 'none';
   if (overBadge) overBadge.style.display = 'none';
   if (resetLink) resetLink.style.display = 'none';
+  // Set the dropdown to the predicted bucket value
   setVal('field-letter-type', bucketLabel);
 }
 
