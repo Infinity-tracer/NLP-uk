@@ -1313,89 +1313,85 @@ def run_comprehend_medical(text: str) -> dict:
 
     # ── Extract Diagnoses from explicit "Diagnosis" section ────────────────────────
     # Documents often have "Diagnosis" or "Post-op Diagnosis" sections that Comprehend misses
-    import re as _re_diag
-    diagnosis_patterns = [
-        r'(?:Post-?op\s+)?Diagnosis\s*[:\n]+\s*\*?\s*([A-Za-z][^\n\[\]]{3,50})(?:\s*\[([A-Z]\d+\.?\d*)\])?',
-        r'Diagnosis\s*[:\n]+\s*(?:Post-?op\s+Diagnosis\s*[:\n]+\s*)?\*?\s*([A-Za-z][^\n\[\]]{3,50})(?:\s*\[([A-Z]\d+\.?\d*)\])?',
-        r'(?:Primary|Principal|Final)\s+Diagnosis\s*[:\n]+\s*\*?\s*([A-Za-z][^\n\[\]]{3,50})(?:\s*\[([A-Z]\d+\.?\d*)\])?',
-    ]
+    try:
+        import re as _re_diag
+        import sys
 
-    # ICD-10 to SNOMED mapping for common conditions
-    ICD_TO_SNOMED = {
-        'K64': ('70153002', 'Hemorrhoids (disorder)'),
-        'K64.9': ('70153002', 'Hemorrhoids (disorder)'),
-        'K64.0': ('90458007', 'First degree hemorrhoids (disorder)'),
-        'K64.1': ('90459004', 'Second degree hemorrhoids (disorder)'),
-        'K64.2': ('90460009', 'Third degree hemorrhoids (disorder)'),
-        'K64.3': ('90461008', 'Fourth degree hemorrhoids (disorder)'),
-        'I10': ('38341003', 'Hypertensive disorder (disorder)'),
-        'E11': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
-        'J44': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
-        'F32': ('35489007', 'Depressive disorder (disorder)'),
-        'M54': ('161891005', 'Backache (finding)'),
-    }
+        # ICD-10 to SNOMED mapping for common conditions
+        ICD_TO_SNOMED = {
+            'K64': ('70153002', 'Hemorrhoids (disorder)'),
+            'K64.9': ('70153002', 'Hemorrhoids (disorder)'),
+            'K64.0': ('90458007', 'First degree hemorrhoids (disorder)'),
+            'K64.1': ('90459004', 'Second degree hemorrhoids (disorder)'),
+            'K64.2': ('90460009', 'Third degree hemorrhoids (disorder)'),
+            'K64.3': ('90461008', 'Fourth degree hemorrhoids (disorder)'),
+            'I10': ('38341003', 'Hypertensive disorder (disorder)'),
+            'E11': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
+            'J44': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
+            'F32': ('35489007', 'Depressive disorder (disorder)'),
+            'M54': ('161891005', 'Backache (finding)'),
+        }
 
-    for pattern in diagnosis_patterns:
-        diag_match = _re_diag.search(text, _re_diag.IGNORECASE | _re_diag.MULTILINE)
-        if diag_match:
-            break
+        # Try pattern for "Diagnosis\nPost-op Diagnosis\n* Haemorrhoids [K64.9]"
+        diag_section_match = _re_diag.search(
+            r'(?:Post-?op\s+)?Diagnosis\s*\n.*?\*\s*([A-Za-z][^\[\n]{2,40})\s*\[([A-Z]\d+\.?\d*)\]',
+            text, _re_diag.IGNORECASE | _re_diag.MULTILINE
+        )
 
-    # Try simpler pattern for "Diagnosis\nPost-op Diagnosis\n* Haemorrhoids [K64.9]"
-    diag_section_match = _re_diag.search(
-        r'(?:Post-?op\s+)?Diagnosis\s*\n.*?\*\s*([A-Za-z][^\[\n]{2,40})\s*\[([A-Z]\d+\.?\d*)\]',
-        text, _re_diag.IGNORECASE | _re_diag.MULTILINE
-    )
+        if diag_section_match:
+            diag_term = diag_section_match.group(1).strip()
+            icd_code = diag_section_match.group(2).strip() if diag_section_match.lastindex >= 2 else None
 
-    if diag_section_match:
-        diag_term = diag_section_match.group(1).strip()
-        icd_code = diag_section_match.group(2).strip() if diag_section_match.lastindex >= 2 else None
+            # Check if diagnosis already exists
+            existing_diag_texts = {d.get("text", "").lower() for d in diagnoses}
+            if diag_term.lower() not in existing_diag_texts:
+                # Try to get SNOMED code from ICD mapping
+                snomed_code = None
+                snomed_desc = None
+                if icd_code and icd_code in ICD_TO_SNOMED:
+                    snomed_code, snomed_desc = ICD_TO_SNOMED[icd_code]
+                elif icd_code:
+                    # Try prefix match (K64.9 -> K64)
+                    icd_prefix = icd_code.split('.')[0]
+                    if icd_prefix in ICD_TO_SNOMED:
+                        snomed_code, snomed_desc = ICD_TO_SNOMED[icd_prefix]
 
-        # Check if diagnosis already exists
-        existing_diag_texts = {d.get("text", "").lower() for d in diagnoses}
-        if diag_term.lower() not in existing_diag_texts:
-            # Try to get SNOMED code from ICD mapping
-            snomed_code = None
-            snomed_desc = None
-            if icd_code and icd_code in ICD_TO_SNOMED:
-                snomed_code, snomed_desc = ICD_TO_SNOMED[icd_code]
-            elif icd_code:
-                # Try prefix match (K64.9 -> K64)
-                icd_prefix = icd_code.split('.')[0]
-                if icd_prefix in ICD_TO_SNOMED:
-                    snomed_code, snomed_desc = ICD_TO_SNOMED[icd_prefix]
+                # If no mapping, try Comprehend lookup
+                if not snomed_code:
+                    try:
+                        _diag_client = make_client("comprehendmedical")
+                        diag_resp = _diag_client.infer_snomedct(Text=diag_term)
+                        diag_entities = diag_resp.get("Entities", [])
+                        if diag_entities:
+                            concepts = diag_entities[0].get("SNOMEDCTConcepts", [])
+                            if concepts:
+                                top = max(concepts, key=lambda c: c.get("Score", 0))
+                                snomed_code = top.get("Code")
+                                snomed_desc = top.get("Description")
+                    except Exception:
+                        pass
 
-            # If no mapping, try Comprehend lookup
-            if not snomed_code:
-                try:
-                    diag_resp = client.infer_snomedct(Text=diag_term)
-                    diag_entities = diag_resp.get("Entities", [])
-                    if diag_entities:
-                        concepts = diag_entities[0].get("SNOMEDCTConcepts", [])
-                        if concepts:
-                            top = max(concepts, key=lambda c: c.get("Score", 0))
-                            snomed_code = top.get("Code")
-                            snomed_desc = top.get("Description")
-                except Exception:
-                    pass
+                if snomed_code:
+                    diag_entry = {
+                        "text": diag_term,
+                        "category": "DIAGNOSIS",
+                        "snomed_code": snomed_code,
+                        "description": snomed_desc or diag_term,
+                        "confidence": 0.85,
+                        "entity_id": str(uuid.uuid4())[:8],
+                        "source": "diagnosis_section_extraction",
+                        "clinical_category": "diagnoses",
+                        "icd_code": icd_code,
+                        "start_pos": diag_section_match.start(1),
+                        "end_pos": diag_section_match.end(1),
+                    }
+                    diagnoses.append(diag_entry)
+                    all_entities.append(diag_entry)
+                    print(f"[DEBUG] Extracted diagnosis from section: '{diag_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-            if snomed_code:
-                diag_entry = {
-                    "text": diag_term,
-                    "category": "DIAGNOSIS",
-                    "snomed_code": snomed_code,
-                    "description": snomed_desc or diag_term,
-                    "confidence": 0.85,
-                    "entity_id": str(uuid.uuid4())[:8],
-                    "source": "diagnosis_section_extraction",
-                    "clinical_category": "diagnoses",
-                    "icd_code": icd_code,
-                    "start_pos": diag_section_match.start(1),
-                    "end_pos": diag_section_match.end(1),
-                }
-                diagnoses.append(diag_entry)
-                all_entities.append(diag_entry)
-                import sys
-                print(f"[DEBUG] Extracted diagnosis from section: '{diag_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+    except Exception as e:
+        import sys
+        print(f"[WARN] Diagnosis section extraction failed: {e}", file=sys.stderr)
 
     # ── Temporal Reasoning: Classify current vs historical ────────────────────────
     # Every entity gets a temporal state: current, historical, resolved, suspected, chronic, acute
