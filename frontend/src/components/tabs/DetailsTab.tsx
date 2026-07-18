@@ -61,7 +61,18 @@ export default function DetailsTab({ result }: DetailsTabProps) {
           >
             📋
           </button>
-          {summary}
+          {/* Render bullet points as list if summary contains them */}
+          {summary.includes('- ') ? (
+            <ul className="list-disc list-inside space-y-1">
+              {summary.split('\n').filter(line => line.trim()).map((line, i) => (
+                <li key={i} className="text-sm">
+                  {line.replace(/^-\s*/, '')}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span style={{ whiteSpace: 'pre-line' }}>{summary}</span>
+          )}
         </div>
       </div>
 
