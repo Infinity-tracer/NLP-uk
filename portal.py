@@ -1199,6 +1199,13 @@ def run_comprehend_medical(text: str) -> dict:
                                     negation_reason = f"OCR-variant 'Nil' pattern in '{text_before}'"
                                     print(f"[NEGATION] MATCH! OCR 'Nil' variant in text_before", file=sys.stderr)
 
+                            # Check for "Pain Score: None" or "Pain Score: 0" patterns
+                            if not is_negated and entity_text == 'pain':
+                                if 'score' in line_lower and ('none' in line_lower or '0/' in line_lower or '0)' in line_lower):
+                                    is_negated = True
+                                    negation_reason = f"Pain score is zero/none in '{line_lower[:40]}'"
+                                    print(f"[NEGATION] MATCH! Pain score zero pattern", file=sys.stderr)
+
                             # Also check if line starts with Nil/No pattern
                             if not is_negated:
                                 if re.match(r'^(nil|no|denies?|without|not|never)\s', line_lower):
@@ -1251,6 +1258,45 @@ def run_comprehend_medical(text: str) -> dict:
             # Also filter treatments (might be "not on treatment")
             treatments, neg_treat = filter_negated(treatments, text)
             negated_entities.extend(neg_treat)
+
+            # Filter medications that are actually allergies or procedural agents (not prescriptions)
+            def filter_medication_context(meds: list, text: str) -> list:
+                """Remove medications that appear in allergy context or are procedural agents."""
+                import re
+                filtered = []
+                text_lower = text.lower()
+
+                # Find allergy section in text
+                allergy_section = ""
+                allergy_match = re.search(r'allerg(?:y|ies)[:\s]+(.{0,500})', text_lower, re.IGNORECASE)
+                if allergy_match:
+                    allergy_section = allergy_match.group(1)
+
+                # Procedural agents that are not prescriptions
+                procedural_agents = ['phenol', 'lidocaine', 'bupivacaine', 'ropivacaine',
+                                     'propofol', 'fentanyl', 'midazolam', 'contrast',
+                                     'iodine', 'betadine', 'chlorhexidine']
+
+                for med in meds:
+                    med_text = med.get("text", "").lower()
+
+                    # Check if medication appears in allergy section
+                    if med_text in allergy_section:
+                        print(f"[MEDICATION FILTER] EXCLUDED (allergy): '{med_text}'", file=sys.stderr)
+                        continue
+
+                    # Check if it's a procedural agent (used during procedure, not prescribed)
+                    if med_text in procedural_agents:
+                        # Check if it appears in "injection" context (procedural use)
+                        if f'{med_text} injection' in text_lower or f'injection of {med_text}' in text_lower:
+                            print(f"[MEDICATION FILTER] EXCLUDED (procedural): '{med_text}'", file=sys.stderr)
+                            continue
+
+                    filtered.append(med)
+
+                return filtered
+
+            medications = filter_medication_context(medications, text)
 
             # Rebuild all_entities (medications and investigations usually not negated)
             all_entities = diagnoses + problems + treatments + medications + investigations
