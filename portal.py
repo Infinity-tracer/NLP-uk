@@ -1176,9 +1176,12 @@ def run_comprehend_medical(text: str) -> dict:
                             print(f"[NEGATION] Entity '{entity_text}' found in line: '{line_lower[:60]}' | text_before='{text_before}'", file=sys.stderr)
 
                             # Check for negation words before entity in this line
+                            # Include common OCR errors: "nil" -> "ni", "nj", "n1", "nii"
                             negation_words = ['nil', 'no', 'denies', 'denied', 'denying',
                                               'without', 'not', 'never', 'none', 'absent',
-                                              'negative', 'lacks', 'lacking']
+                                              'negative', 'lacks', 'lacking',
+                                              # OCR error variants of "nil"
+                                              'ni', 'nj', 'n1', 'nii', 'nll', 'nil1']
 
                             for neg_word in negation_words:
                                 # Direct check: does text_before contain the negation word?
@@ -1187,6 +1190,14 @@ def run_comprehend_medical(text: str) -> dict:
                                     negation_reason = f"'{neg_word}' in '{text_before}' before '{entity_text}'"
                                     print(f"[NEGATION] MATCH! '{neg_word}' found in text_before", file=sys.stderr)
                                     break
+
+                            # Also check if text_before ends with common OCR-error patterns
+                            if not is_negated:
+                                # "nj recent" or "ni urinary" patterns (OCR misread of "Nil")
+                                if re.match(r'^(ni|nj|n1)\s+\w+$', text_before):
+                                    is_negated = True
+                                    negation_reason = f"OCR-variant 'Nil' pattern in '{text_before}'"
+                                    print(f"[NEGATION] MATCH! OCR 'Nil' variant in text_before", file=sys.stderr)
 
                             # Also check if line starts with Nil/No pattern
                             if not is_negated:
