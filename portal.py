@@ -1415,6 +1415,19 @@ Extracted clinical entities:
         clean = _re.sub(r'^#{1,3}\s+', '', clean, flags=_re.MULTILINE)  # ## headers
         clean = _re.sub(r'^[-–—]{3,}\s*$', '', clean, flags=_re.MULTILINE)  # --- dividers
         clean = clean.strip()
+
+        # FORCE BULLET FORMATTING: Split inline bullets onto separate lines
+        # Pattern: " - " in middle of text indicates inline bullet that should be on new line
+        # Handle various bullet patterns: "- ", "• ", "* "
+        clean = _re.sub(r'\s+[-•\*]\s+(Dx|Procedure|Rx|F/U|Ix|Advice):', r'\n- \1:', clean)
+        # Also handle "Female patient dx:" or similar starting patterns
+        clean = _re.sub(r'^(Male|Female)\s+patient\s+', r'- ', clean, flags=_re.IGNORECASE)
+        # Ensure each "- Xxx:" pattern starts on its own line
+        clean = _re.sub(r'(?<!\n)\s*-\s*(Dx|Procedure|Rx|F/U|Ix|Advice):', r'\n- \1:', clean)
+        # Clean up any double newlines or leading newlines
+        clean = _re.sub(r'\n{2,}', '\n', clean)
+        clean = clean.strip()
+
         # Hard word-count safety net: clip at 130 words, re-terminate at last sentence end
         _words = clean.split()
         if len(_words) > 130:
