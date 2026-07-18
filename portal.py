@@ -1417,13 +1417,20 @@ Extracted clinical entities:
         clean = clean.strip()
 
         # FORCE BULLET FORMATTING: Split inline bullets onto separate lines
-        # Pattern: " - " in middle of text indicates inline bullet that should be on new line
-        # Handle various bullet patterns: "- ", "• ", "* "
-        clean = _re.sub(r'\s+[-•\*]\s+(Dx|Procedure|Rx|F/U|Ix|Advice):', r'\n- \1:', clean)
-        # Also handle "Female patient dx:" or similar starting patterns
-        clean = _re.sub(r'^(Male|Female)\s+patient\s+', r'- ', clean, flags=_re.IGNORECASE)
-        # Ensure each "- Xxx:" pattern starts on its own line
-        clean = _re.sub(r'(?<!\n)\s*-\s*(Dx|Procedure|Rx|F/U|Ix|Advice):', r'\n- \1:', clean)
+        # The LLM outputs: "Female patient dx: X - Procedure: Y - Rx: Z - F/U: W"
+        # We need to split on " - Procedure:", " - Rx:", " - F/U:" etc.
+
+        # First, handle the start: "Female patient dx:" -> "- Dx:"
+        clean = _re.sub(r'^(Female|Male)\s+patient\s+dx:', r'- Dx:', clean, flags=_re.IGNORECASE)
+
+        # Split on " - Procedure:", " - Rx:", " - F/U:", " - Ix:", " - Advice:" (case insensitive)
+        clean = _re.sub(r'\s+-\s+Procedure:', r'\n- Procedure:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+-\s+Rx:', r'\n- Rx:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+-\s+F/U:', r'\n- F/U:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+-\s+Ix:', r'\n- Ix:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+-\s+Advice:', r'\n- Advice:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+-\s+Dx:', r'\n- Dx:', clean, flags=_re.IGNORECASE)
+
         # Clean up any double newlines or leading newlines
         clean = _re.sub(r'\n{2,}', '\n', clean)
         clean = clean.strip()
