@@ -1417,19 +1417,24 @@ Extracted clinical entities:
         clean = clean.strip()
 
         # FORCE BULLET FORMATTING: Split inline bullets onto separate lines
-        # The LLM outputs: "Female patient dx: X - Procedure: Y - Rx: Z - F/U: W"
-        # We need to split on " - Procedure:", " - Rx:", " - F/U:" etc.
+        # Input: "Female patient dx: X - Procedure: Y - Rx: Z - F/U: W"
+        # Output: "- Dx: X\n- Procedure: Y\n- Rx: Z\n- F/U: W"
 
-        # First, handle the start: "Female patient dx:" -> "- Dx:"
-        clean = _re.sub(r'^(Female|Male)\s+patient\s+dx:', r'- Dx:', clean, flags=_re.IGNORECASE)
+        # First handle start: "Female patient dx:" -> "- Dx:"
+        clean = _re.sub(r'^Female\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'^Male\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
 
-        # Split on " - Procedure:", " - Rx:", " - F/U:", " - Ix:", " - Advice:" (case insensitive)
-        clean = _re.sub(r'\s+-\s+Procedure:', r'\n- Procedure:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+-\s+Rx:', r'\n- Rx:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+-\s+F/U:', r'\n- F/U:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+-\s+Ix:', r'\n- Ix:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+-\s+Advice:', r'\n- Advice:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+-\s+Dx:', r'\n- Dx:', clean, flags=_re.IGNORECASE)
+        # Now split on " - Keyword:" patterns - the key is matching the hyphen surrounded by spaces
+        # Use word boundary and common keywords
+        keywords = ['Procedure', 'Rx', 'F/U', 'Ix', 'Advice', 'Dx', 'Follow-up', 'Meds', 'Plan']
+        for kw in keywords:
+            # Match " - Keyword:" (space-hyphen-space-keyword-colon)
+            pattern = r' - ' + kw + ':'
+            replacement = '\n- ' + kw + ':'
+            clean = clean.replace(pattern, replacement)
+            # Also try lowercase
+            pattern_lower = r' - ' + kw.lower() + ':'
+            clean = clean.replace(pattern_lower, replacement)
 
         # Clean up any double newlines or leading newlines
         clean = _re.sub(r'\n{2,}', '\n', clean)
