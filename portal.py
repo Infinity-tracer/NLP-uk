@@ -923,6 +923,8 @@ def run_comprehend_medical(text: str) -> dict:
             "confidence":  round(score, 3),
             "entity_id":   str(uuid.uuid4())[:8],
             "source":      "comprehend_snomed",
+            "start_pos":   e.get("BeginOffset", 0),  # Position from AWS Comprehend
+            "end_pos":     e.get("EndOffset", len(text_val)),
         }
 
         # Categorize into 5 buckets
@@ -1008,6 +1010,8 @@ def run_comprehend_medical(text: str) -> dict:
                     "entity_id":   str(uuid.uuid4())[:8],
                     "source":      "comprehend_medication",
                     "clinical_category": "medications",
+                    "start_pos":   e.get("BeginOffset", 0),
+                    "end_pos":     e.get("EndOffset", len(text_val)),
                 }
                 medications.append(entry)
                 all_entities.append(entry)
@@ -1022,6 +1026,8 @@ def run_comprehend_medical(text: str) -> dict:
                     "entity_id":   str(uuid.uuid4())[:8],
                     "source":      "comprehend_medication_no_snomed",
                     "clinical_category": "medications",
+                    "start_pos":   e.get("BeginOffset", 0),
+                    "end_pos":     e.get("EndOffset", len(text_val)),
                 }
                 medications.append(entry)
                 all_entities.append(entry)
@@ -1145,13 +1151,16 @@ def run_comprehend_medical(text: str) -> dict:
                 negated = []
                 for entity in bucket:
                     entity_text = entity.get("text", "")
-                    # Find position in text
-                    import re
-                    match = re.search(re.escape(entity_text), text, re.IGNORECASE)
-                    if match:
-                        start_pos, end_pos = match.start(), match.end()
-                    else:
-                        start_pos, end_pos = 0, len(entity_text)
+                    # Use position from AWS Comprehend if available, else search
+                    start_pos = entity.get("start_pos")
+                    end_pos = entity.get("end_pos")
+                    if start_pos is None or end_pos is None:
+                        import re
+                        match = re.search(re.escape(entity_text), text, re.IGNORECASE)
+                        if match:
+                            start_pos, end_pos = match.start(), match.end()
+                        else:
+                            start_pos, end_pos = 0, len(entity_text)
 
                     result = detector.detect_assertion(text, entity_text, start_pos, end_pos)
 

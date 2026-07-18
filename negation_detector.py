@@ -117,6 +117,18 @@ PRE_NEGATION_TRIGGERS = [
     r"\bNIL\b",
     r"\bNKDA\b",  # No Known Drug Allergies (context: allergies)
     r"\bNKA\b",   # No Known Allergies
+    r"\bnil\s+recent\b",  # "Nil recent trauma"
+    r"\bnil\s+urinary\b",  # "Nil urinary symptoms"
+    r"\bnil\s+new\b",  # "Nil new symptoms"
+    r"\bnil\s+focal\b",  # "Nil focal neurology"
+    r"\bno\s+recent\b",  # "No recent history"
+    r"\bno\s+urinary\b",  # "No urinary incontinence"
+    r"\bno\s+faecal\b",  # "No faecal incontinence"
+    r"\bno\s+bowel\b",  # "No bowel symptoms"
+    r"\bno\s+new\b",  # "No new symptoms"
+    r"\bno\s+focal\b",  # "No focal neurology"
+    r"\bno\s+concerns?\b",  # "No concerns"
+    r"\bnot\s+complaining\s+of\b",  # "Not complaining of"
 ]
 
 # =============================================================================
