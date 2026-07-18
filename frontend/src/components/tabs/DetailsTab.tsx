@@ -32,9 +32,11 @@ function mapLetterTypeToBucket(letterType: string): string {
 
 export default function DetailsTab({ result }: DetailsTabProps) {
   const summary = result.summaries?.clinician?.summary || 'Not available';
-  const predictedBucket = mapLetterTypeToBucket(result.letter_type || '');
+  const predictedRaw = result.letter_type || '';  // e.g. "ED Discharge Letter"
+  const predictedBucket = mapLetterTypeToBucket(predictedRaw);
 
-  const [selectedBucket, setSelectedBucket] = useState(predictedBucket);
+  // Show the raw predicted type directly, user can override with bucket options
+  const [selectedValue, setSelectedValue] = useState(predictedRaw || predictedBucket);
   // Use comprehensive extraction fields (event_date, letter_date) first, fallback to structured fields
   const [eventDate, setEventDate] = useState(result.event_date || result.structured?.admission_date || '');
   const [letterDate, setLetterDate] = useState(result.letter_date || result.structured?.discharge_date || result.structured?.appointment_date || '');
@@ -44,7 +46,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
   // Use comprehensive extraction conclusion first, fallback to structured fields
   const [conclusion, setConclusion] = useState(result.conclusion || result.structured?.diagnosis_text || result.structured?.indication || result.structured?.impression || '');
 
-  const isOverride = selectedBucket !== predictedBucket;
+  const isOverride = selectedValue !== predictedRaw && selectedValue !== predictedBucket;
 
   return (
     <div className="space-y-4">
@@ -67,7 +69,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <label className="field-label mb-0">Letter type</label>
-          {!isOverride && predictedBucket && (
+          {!isOverride && predictedRaw && (
             <span className="text-[10px] font-bold tracking-wide bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
               Auto-detected
             </span>
@@ -77,21 +79,25 @@ export default function DetailsTab({ result }: DetailsTabProps) {
               Manual override
             </span>
           )}
+          {isOverride && predictedRaw && (
+            <button
+              onClick={() => setSelectedValue(predictedRaw)}
+              className="text-xs text-nhs-blue hover:underline ml-2"
+            >
+              Reset
+            </button>
+          )}
         </div>
-        {isOverride && predictedBucket && (
-          <button
-            onClick={() => setSelectedBucket(predictedBucket)}
-            className="text-xs text-nhs-blue hover:underline mb-1"
-          >
-            Reset to auto-detected
-          </button>
-        )}
         <select
-          value={selectedBucket}
-          onChange={(e) => setSelectedBucket(e.target.value)}
+          value={selectedValue}
+          onChange={(e) => setSelectedValue(e.target.value)}
           className="field-input cursor-pointer"
         >
-          <option value="">Select letter type...</option>
+          {/* Show the predicted raw type as first option */}
+          {predictedRaw && (
+            <option value={predictedRaw}>{predictedRaw}</option>
+          )}
+          <option value="" disabled>── Or select category ──</option>
           {LETTER_TYPE_BUCKETS.map((bucket) => (
             <option key={bucket.key} value={bucket.label}>
               {bucket.label}
@@ -99,7 +105,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
           ))}
         </select>
         <p className="text-[10px] text-gray-400 mt-1">
-          Select or change the letter type as needed.
+          Change if needed.
         </p>
       </div>
 
