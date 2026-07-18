@@ -1164,6 +1164,14 @@ def run_comprehend_medical(text: str) -> dict:
 
                     result = detector.detect_assertion(text, entity_text, start_pos, end_pos)
 
+                    # Debug: Show context around entity for negation checking
+                    context_start = max(0, start_pos - 30)
+                    context_end = min(len(text), end_pos + 20)
+                    context = text[context_start:context_end].replace('\n', ' ')
+                    print(f"[DEBUG NEGATION] Entity: '{entity_text}' | Pos: {start_pos}-{end_pos} | "
+                          f"Context: '...{context}...' | Assertion: {result.assertion.value} | "
+                          f"Trigger: {result.trigger_text}", file=sys.stderr)
+
                     # Add assertion status to entity
                     entity["assertion"] = result.assertion.value
                     entity["assertion_trigger"] = result.trigger_text
