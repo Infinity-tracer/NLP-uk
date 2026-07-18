@@ -1417,24 +1417,23 @@ Extracted clinical entities:
         clean = clean.strip()
 
         # FORCE BULLET FORMATTING: Split inline bullets onto separate lines
-        # Input: "Female patient dx: X - Procedure: Y - Rx: Z - F/U: W"
+        # Input: "Male patient dx: X - Procedure: Y - Rx: Z - F/U: W"
         # Output: "- Dx: X\n- Procedure: Y\n- Rx: Z\n- F/U: W"
 
-        # First handle start: "Female patient dx:" -> "- Dx:"
-        clean = _re.sub(r'^Female\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'^Male\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
+        # First handle start: "Female/Male patient dx:" -> "- Dx:"
+        clean = _re.sub(r'^(Female|Male)\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
 
-        # Now split on " - Keyword:" patterns - the key is matching the hyphen surrounded by spaces
-        # Use word boundary and common keywords
-        keywords = ['Procedure', 'Rx', 'F/U', 'Ix', 'Advice', 'Dx', 'Follow-up', 'Meds', 'Plan']
-        for kw in keywords:
-            # Match " - Keyword:" (space-hyphen-space-keyword-colon)
-            pattern = r' - ' + kw + ':'
-            replacement = '\n- ' + kw + ':'
-            clean = clean.replace(pattern, replacement)
-            # Also try lowercase
-            pattern_lower = r' - ' + kw.lower() + ':'
-            clean = clean.replace(pattern_lower, replacement)
+        # Split on " - Keyword:" using regex (handles various dash types)
+        # Match: space + any dash/hyphen + space + keyword + colon
+        clean = _re.sub(r'\s+[-–—]\s+Procedure:', '\n- Procedure:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Rx:', '\n- Rx:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+F/U:', '\n- F/U:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Ix:', '\n- Ix:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Advice:', '\n- Advice:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Dx:', '\n- Dx:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Follow-up:', '\n- Follow-up:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Meds:', '\n- Meds:', clean, flags=_re.IGNORECASE)
+        clean = _re.sub(r'\s+[-–—]\s+Plan:', '\n- Plan:', clean, flags=_re.IGNORECASE)
 
         # Clean up any double newlines or leading newlines
         clean = _re.sub(r'\n{2,}', '\n', clean)
