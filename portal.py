@@ -1148,19 +1148,14 @@ def run_comprehend_medical(text: str) -> dict:
             def filter_negated(bucket: list, text: str) -> tuple:
                 """Filter out negated entities, return (allowed, negated)"""
                 import re
+                import sys
                 allowed = []
                 negated = []
 
-                # Simple line-based negation patterns - if line contains these before entity, exclude
-                LINE_NEGATION_PATTERNS = [
-                    r'^nil\b', r'^no\b', r'^denies?\b', r'^denied\b', r'^without\b',
-                    r'^not\b', r'^never\b', r'^none\b', r'^absent\b', r'^negative\b',
-                    r'\bnil\s+\w+\s*$',  # "Nil recent trauma" at end of line
-                    r'\bno\s+\w+\s+\w*$',  # "No urinary incontinence"
-                ]
-
                 # Split text into lines for line-based checking
                 lines = text.split('\n')
+
+                print(f"[NEGATION] Checking {len(bucket)} entities against {len(lines)} lines", file=sys.stderr)
 
                 for entity in bucket:
                     entity_text = entity.get("text", "").strip().lower()
@@ -1178,16 +1173,19 @@ def run_comprehend_medical(text: str) -> dict:
                             entity_pos_in_line = line_lower.find(entity_text)
                             text_before = line_lower[:entity_pos_in_line].strip()
 
+                            print(f"[NEGATION] Entity '{entity_text}' found in line: '{line_lower[:60]}' | text_before='{text_before}'", file=sys.stderr)
+
                             # Check for negation words before entity in this line
                             negation_words = ['nil', 'no', 'denies', 'denied', 'denying',
                                               'without', 'not', 'never', 'none', 'absent',
-                                              'negative', 'lacks', 'lacking', 'free from',
-                                              'no evidence of', 'no signs of', 'ruled out']
+                                              'negative', 'lacks', 'lacking']
 
                             for neg_word in negation_words:
-                                if text_before.endswith(neg_word) or f' {neg_word} ' in f' {text_before} ' or text_before.startswith(neg_word):
+                                # Direct check: does text_before contain the negation word?
+                                if neg_word in text_before:
                                     is_negated = True
-                                    negation_reason = f"'{neg_word}' before '{entity_text}' in line"
+                                    negation_reason = f"'{neg_word}' in '{text_before}' before '{entity_text}'"
+                                    print(f"[NEGATION] MATCH! '{neg_word}' found in text_before", file=sys.stderr)
                                     break
 
                             # Also check if line starts with Nil/No pattern
@@ -1195,6 +1193,7 @@ def run_comprehend_medical(text: str) -> dict:
                                 if re.match(r'^(nil|no|denies?|without|not|never)\s', line_lower):
                                     is_negated = True
                                     negation_reason = f"Line starts with negation: '{line_lower[:30]}...'"
+                                    print(f"[NEGATION] MATCH! Line starts with negation", file=sys.stderr)
 
                             if is_negated:
                                 break
@@ -1224,9 +1223,10 @@ def run_comprehend_medical(text: str) -> dict:
                         entity["assertion_confidence"] = 0.95
 
                     if is_negated:
-                        print(f"[DEBUG NEGATION] EXCLUDED: '{entity.get('text')}' - {negation_reason}", file=sys.stderr)
+                        print(f"[NEGATION] EXCLUDED: '{entity.get('text')}' - {negation_reason}", file=sys.stderr)
                         negated.append(entity)
                     else:
+                        print(f"[NEGATION] KEPT: '{entity.get('text')}'", file=sys.stderr)
                         allowed.append(entity)
 
                 return allowed, negated
