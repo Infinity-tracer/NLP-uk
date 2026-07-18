@@ -1423,17 +1423,15 @@ Extracted clinical entities:
         # First handle start: "Female/Male patient dx:" -> "- Dx:"
         clean = _re.sub(r'^(Female|Male)\s+patient\s+dx:', '- Dx:', clean, flags=_re.IGNORECASE)
 
-        # Split on " - Keyword:" using regex (handles various dash types)
-        # Match: space + any dash/hyphen + space + keyword + colon
-        clean = _re.sub(r'\s+[-–—]\s+Procedure:', '\n- Procedure:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Rx:', '\n- Rx:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+F/U:', '\n- F/U:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Ix:', '\n- Ix:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Advice:', '\n- Advice:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Dx:', '\n- Dx:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Follow-up:', '\n- Follow-up:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Meds:', '\n- Meds:', clean, flags=_re.IGNORECASE)
-        clean = _re.sub(r'\s+[-–—]\s+Plan:', '\n- Plan:', clean, flags=_re.IGNORECASE)
+        # Split on " - Keyword:" patterns using literal string replacement first
+        # This handles the exact dash character the LLM outputs
+        for kw in ['Procedure', 'Rx', 'F/U', 'Ix', 'Advice', 'Dx', 'Follow-up', 'Meds', 'Plan']:
+            # Try different dash variants with literal replacement
+            clean = clean.replace(f' - {kw}:', f'\n- {kw}:')
+            clean = clean.replace(f' – {kw}:', f'\n- {kw}:')  # en-dash
+            clean = clean.replace(f' — {kw}:', f'\n- {kw}:')  # em-dash
+            # Also try lowercase
+            clean = clean.replace(f' - {kw.lower()}:', f'\n- {kw}:')
 
         # Clean up any double newlines or leading newlines
         clean = _re.sub(r'\n{2,}', '\n', clean)
