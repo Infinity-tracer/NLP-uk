@@ -2986,25 +2986,26 @@ def extract_plan_and_actions_fallback(text: str) -> dict:
 def extract_hospital_trust(text: str) -> str:
     """OBS-008: Identify the originating hospital trust from document header text.
     Enables routing, audit logging, and trust-specific formatting rules.
+    Returns clean name without NHS/Foundation/Trust suffixes.
     """
     t = text[:800].lower()  # trust name always in first page header
     if any(x in t for x in ["frimley health", "frimley park hospital", "wexham park", "heatherwood"]):
-        return "Frimley Health NHS Foundation Trust"
+        return "Frimley Health"
     if any(x in t for x in ["royal berkshire", "rbh", "london road, reading"]):
-        return "Royal Berkshire Hospital NHS Foundation Trust"
+        return "Royal Berkshire Hospital"
     if any(x in t for x in ["berkshire healthcare", "prospect park", "talking therapies"]):
-        return "Berkshire Healthcare NHS Foundation Trust"
+        return "Berkshire Healthcare"
     if any(x in t for x in ["south central ambulance", "scas"]):
-        return "South Central Ambulance Service NHS Foundation Trust"
+        return "South Central Ambulance Service"
     if any(x in t for x in ["university hospital southampton", "uhs", "tremona road"]):
-        return "University Hospital Southampton NHS Foundation Trust"
+        return "University Hospital Southampton"
     if any(x in t for x in ["kettering", "rothwell road"]):
-        return "Kettering General Hospital NHS Foundation Trust"
+        return "Kettering General Hospital"
     if any(x in t for x in ["evolutio", "odtc.co.uk", "newtown house, newtown road"]):
-        return "Evolutio Care Innovations Ltd"
+        return "Evolutio Care Innovations"
     if any(x in t for x in ["expert health", "expert/health", "experthealth", "expert health ltd", "dr. mitra dutt"]):
-        return "Expert Health Ltd"
-    return "Unknown Trust"
+        return "Expert Health"
+    return "Unknown"
 
 
 def contains_sensitive_content(text: str) -> bool:
