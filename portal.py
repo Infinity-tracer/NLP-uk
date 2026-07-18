@@ -1147,41 +1147,84 @@ def run_comprehend_medical(text: str) -> dict:
 
             def filter_negated(bucket: list, text: str) -> tuple:
                 """Filter out negated entities, return (allowed, negated)"""
+                import re
                 allowed = []
                 negated = []
+
+                # Simple line-based negation patterns - if line contains these before entity, exclude
+                LINE_NEGATION_PATTERNS = [
+                    r'^nil\b', r'^no\b', r'^denies?\b', r'^denied\b', r'^without\b',
+                    r'^not\b', r'^never\b', r'^none\b', r'^absent\b', r'^negative\b',
+                    r'\bnil\s+\w+\s*$',  # "Nil recent trauma" at end of line
+                    r'\bno\s+\w+\s+\w*$',  # "No urinary incontinence"
+                ]
+
+                # Split text into lines for line-based checking
+                lines = text.split('\n')
+
                 for entity in bucket:
-                    entity_text = entity.get("text", "")
-                    # Use position from AWS Comprehend if available, else search
-                    start_pos = entity.get("start_pos")
-                    end_pos = entity.get("end_pos")
-                    if start_pos is None or end_pos is None:
-                        import re
-                        match = re.search(re.escape(entity_text), text, re.IGNORECASE)
-                        if match:
-                            start_pos, end_pos = match.start(), match.end()
-                        else:
-                            start_pos, end_pos = 0, len(entity_text)
+                    entity_text = entity.get("text", "").strip().lower()
+                    if not entity_text:
+                        continue
 
-                    result = detector.detect_assertion(text, entity_text, start_pos, end_pos)
+                    is_negated = False
+                    negation_reason = None
 
-                    # Debug: Show context around entity for negation checking
-                    context_start = max(0, start_pos - 30)
-                    context_end = min(len(text), end_pos + 20)
-                    context = text[context_start:context_end].replace('\n', ' ')
-                    print(f"[DEBUG NEGATION] Entity: '{entity_text}' | Pos: {start_pos}-{end_pos} | "
-                          f"Context: '...{context}...' | Assertion: {result.assertion.value} | "
-                          f"Trigger: {result.trigger_text}", file=sys.stderr)
+                    # Find which line(s) contain this entity
+                    for line in lines:
+                        line_lower = line.lower().strip()
+                        if entity_text in line_lower:
+                            # Check if line starts with or contains negation before the entity
+                            entity_pos_in_line = line_lower.find(entity_text)
+                            text_before = line_lower[:entity_pos_in_line].strip()
 
-                    # Add assertion status to entity
-                    entity["assertion"] = result.assertion.value
-                    entity["assertion_trigger"] = result.trigger_text
-                    entity["assertion_confidence"] = result.confidence
+                            # Check for negation words before entity in this line
+                            negation_words = ['nil', 'no', 'denies', 'denied', 'denying',
+                                              'without', 'not', 'never', 'none', 'absent',
+                                              'negative', 'lacks', 'lacking', 'free from',
+                                              'no evidence of', 'no signs of', 'ruled out']
 
-                    # Only allow PRESENT entities as positive diagnoses/problems
-                    # Historical and Family History are kept but marked
-                    if result.assertion == AssertionStatus.ABSENT:
-                        negated.append(entity)
-                    elif result.assertion == AssertionStatus.RULED_OUT:
+                            for neg_word in negation_words:
+                                if text_before.endswith(neg_word) or f' {neg_word} ' in f' {text_before} ' or text_before.startswith(neg_word):
+                                    is_negated = True
+                                    negation_reason = f"'{neg_word}' before '{entity_text}' in line"
+                                    break
+
+                            # Also check if line starts with Nil/No pattern
+                            if not is_negated:
+                                if re.match(r'^(nil|no|denies?|without|not|never)\s', line_lower):
+                                    is_negated = True
+                                    negation_reason = f"Line starts with negation: '{line_lower[:30]}...'"
+
+                            if is_negated:
+                                break
+
+                    # Also use the detector for position-based check as backup
+                    if not is_negated:
+                        start_pos = entity.get("start_pos")
+                        end_pos = entity.get("end_pos")
+                        if start_pos is None or end_pos is None:
+                            match = re.search(re.escape(entity.get("text", "")), text, re.IGNORECASE)
+                            if match:
+                                start_pos, end_pos = match.start(), match.end()
+                            else:
+                                start_pos, end_pos = 0, len(entity.get("text", ""))
+
+                        result = detector.detect_assertion(text, entity.get("text", ""), start_pos, end_pos)
+                        entity["assertion"] = result.assertion.value
+                        entity["assertion_trigger"] = result.trigger_text
+                        entity["assertion_confidence"] = result.confidence
+
+                        if result.assertion == AssertionStatus.ABSENT or result.assertion == AssertionStatus.RULED_OUT:
+                            is_negated = True
+                            negation_reason = f"Detector: {result.trigger_text}"
+                    else:
+                        entity["assertion"] = "absent"
+                        entity["assertion_trigger"] = negation_reason
+                        entity["assertion_confidence"] = 0.95
+
+                    if is_negated:
+                        print(f"[DEBUG NEGATION] EXCLUDED: '{entity.get('text')}' - {negation_reason}", file=sys.stderr)
                         negated.append(entity)
                     else:
                         allowed.append(entity)
