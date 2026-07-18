@@ -23,6 +23,8 @@ COPY document_handler.py .
 COPY preprocessing.py .
 COPY hipaa_compliance.py .
 COPY insights/ ./insights/
+COPY negation_detector.py .
+COPY temporal_reasoner.py .
 
 # Create directories for uploads and results
 RUN mkdir -p portal_uploads portal_results
