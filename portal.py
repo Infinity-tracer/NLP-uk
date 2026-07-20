@@ -1176,12 +1176,26 @@ def run_comprehend_medical(text: str) -> dict:
                             print(f"[NEGATION] Entity '{entity_text}' found in line: '{line_lower[:60]}' | text_before='{text_before}'", file=sys.stderr)
 
                             # Check for negation words before entity in this line
-                            # Include common OCR errors: "nil" -> "ni", "nj", "n1", "nii"
-                            negation_words = ['nil', 'no', 'denies', 'denied', 'denying',
-                                              'without', 'not', 'never', 'none', 'absent',
-                                              'negative', 'lacks', 'lacking',
-                                              # OCR error variants of "nil"
-                                              'ni', 'nj', 'n1', 'nii', 'nll', 'nil1']
+                            # Include common OCR errors and comprehensive negation patterns
+                            negation_words = [
+                                # Core negation words
+                                'nil', 'no', 'not', 'none', 'never', 'neither',
+                                'denies', 'denied', 'denying', 'deny',
+                                'without', 'absent', 'negative', 'lacks', 'lacking',
+                                'ruled out', 'rules out', 'excludes', 'excluded',
+                                'no evidence of', 'no history of', 'no signs of',
+                                'no symptoms of', 'not consistent with',
+                                # OCR error variants of "nil"
+                                'ni', 'nj', 'n1', 'nii', 'nll', 'nil1', 'n11',
+                                # OCR error variants of "no"
+                                'n0', 'na',
+                                # OCR error variants of "none"
+                                'n0ne', 'nane',
+                                # OCR error variants of "denies"
+                                'deni3s', 'denis', 'demes',
+                                # Clinical negation phrases
+                                'unremarkable', 'normal', 'clear', 'negative for',
+                            ]
 
                             for neg_word in negation_words:
                                 # Direct check: does text_before contain the negation word?
@@ -1215,6 +1229,28 @@ def run_comprehend_medical(text: str) -> dict:
 
                             if is_negated:
                                 break
+
+                    # Window-based negation: check N words BEFORE entity regardless of line breaks
+                    # This catches: "Patient has no diabetes, hypertension, or cardiac issues"
+                    if not is_negated:
+                        entity_match = re.search(re.escape(entity_text), text.lower())
+                        if entity_match:
+                            text_before_entity = text[:entity_match.start()].lower()
+                            words_before = text_before_entity.split()[-15:]  # Last 15 words
+                            window_negations = {'no', 'nil', 'not', 'without', 'denies', 'denied',
+                                                'never', 'none', 'absent', 'negative', 'neither',
+                                                'ni', 'nj', 'n1'}  # Include OCR variants
+                            for i, word in enumerate(words_before):
+                                if word in window_negations:
+                                    # Check it's not a false positive like "no longer" or "not only"
+                                    context_after = ' '.join(words_before[i+1:i+3]) if i+1 < len(words_before) else ''
+                                    false_positive_contexts = ['longer', 'only', 'change', 'increase',
+                                                               'further', 'more', 'less', 'difficulty']
+                                    if not any(fp in context_after for fp in false_positive_contexts):
+                                        is_negated = True
+                                        negation_reason = f"Window negation: '{word}' within 15 words of '{entity_text}'"
+                                        print(f"[NEGATION] MATCH! Window-based: '{word}' before entity", file=sys.stderr)
+                                        break
 
                     # Also use the detector for position-based check as backup
                     if not is_negated:
@@ -1266,33 +1302,111 @@ def run_comprehend_medical(text: str) -> dict:
                 filtered = []
                 text_lower = text.lower()
 
-                # Find allergy section in text
-                allergy_section = ""
-                allergy_match = re.search(r'allerg(?:y|ies)[:\s]+(.{0,500})', text_lower, re.IGNORECASE)
-                if allergy_match:
-                    allergy_section = allergy_match.group(1)
+                # Find allergy section in text - multiple patterns
+                allergy_sections = []
+                allergy_patterns = [
+                    r'allerg(?:y|ies)[:\s]+(.{0,500})',
+                    r'adverse\s+(?:drug\s+)?reactions?[:\s]+(.{0,500})',
+                    r'drug\s+sensitivit(?:y|ies)[:\s]+(.{0,500})',
+                    r'known\s+allerg(?:y|ies)[:\s]+(.{0,500})',
+                    r'allergic\s+to[:\s]+(.{0,300})',
+                ]
+                for pattern in allergy_patterns:
+                    match = re.search(pattern, text_lower, re.IGNORECASE)
+                    if match:
+                        allergy_sections.append(match.group(1))
+                allergy_text = ' '.join(allergy_sections)
 
-                # Procedural agents that are not prescriptions
-                procedural_agents = ['phenol', 'lidocaine', 'bupivacaine', 'ropivacaine',
-                                     'propofol', 'fentanyl', 'midazolam', 'contrast',
-                                     'iodine', 'betadine', 'chlorhexidine']
+                # Extract specific allergy drug names from allergy section
+                allergy_drugs = set()
+                # Common drug names that might appear in allergy lists
+                common_allergy_drugs = [
+                    'penicillin', 'amoxicillin', 'ampicillin', 'co-amoxiclav', 'augmentin',
+                    'codeine', 'morphine', 'tramadol', 'oxycodone', 'dihydrocodeine',
+                    'aspirin', 'ibuprofen', 'naproxen', 'diclofenac', 'nsaid', 'nsaids',
+                    'sulfa', 'sulfur', 'sulfonamide', 'trimethoprim', 'sulfamethoxazole',
+                    'erythromycin', 'clarithromycin', 'azithromycin',
+                    'metoclopramide', 'domperidone', 'ondansetron',
+                    'latex', 'iodine', 'contrast',
+                    'cephalosporin', 'cefuroxime', 'ceftriaxone', 'cefalexin',
+                    'metronidazole', 'ciprofloxacin', 'levofloxacin',
+                    'vancomycin', 'gentamicin', 'clindamycin',
+                    'warfarin', 'heparin', 'enoxaparin',
+                    'ace inhibitor', 'lisinopril', 'ramipril', 'enalapril',
+                    'statin', 'simvastatin', 'atorvastatin', 'pravastatin',
+                ]
+                for drug in common_allergy_drugs:
+                    if drug in allergy_text:
+                        allergy_drugs.add(drug)
+
+                # Procedural/anesthetic agents that are not prescriptions (expanded list)
+                procedural_agents = [
+                    # Local anesthetics
+                    'lidocaine', 'lignocaine', 'bupivacaine', 'ropivacaine', 'levobupivacaine',
+                    'prilocaine', 'mepivacaine', 'articaine',
+                    # General anesthetics
+                    'propofol', 'thiopentone', 'thiopental', 'etomidate', 'ketamine',
+                    'sevoflurane', 'isoflurane', 'desflurane', 'halothane', 'nitrous oxide',
+                    # Opioid anesthetics
+                    'fentanyl', 'alfentanil', 'remifentanil', 'sufentanil',
+                    # Sedatives used in procedures
+                    'midazolam', 'diazepam', 'lorazepam',
+                    # Neuromuscular blockers
+                    'rocuronium', 'atracurium', 'vecuronium', 'cisatracurium',
+                    'suxamethonium', 'succinylcholine',
+                    # Reversal agents
+                    'neostigmine', 'sugammadex', 'glycopyrrolate', 'atropine',
+                    # Vasopressors used in procedures
+                    'ephedrine', 'metaraminol', 'phenylephrine', 'noradrenaline',
+                    # Sclerosing/injection agents
+                    'phenol', 'polidocanol', 'sodium tetradecyl',
+                    # Antiseptics
+                    'chlorhexidine', 'betadine', 'povidone-iodine', 'iodine',
+                    # Contrast agents
+                    'contrast', 'gadolinium', 'omnipaque', 'visipaque', 'iohexol',
+                    # Anti-emetics given during procedures
+                    'ondansetron', 'cyclizine', 'dexamethasone',
+                ]
 
                 for med in meds:
                     med_text = med.get("text", "").lower()
+                    exclude = False
+                    exclude_reason = None
 
                     # Check if medication appears in allergy section
-                    if med_text in allergy_section:
-                        print(f"[MEDICATION FILTER] EXCLUDED (allergy): '{med_text}'", file=sys.stderr)
-                        continue
+                    if med_text in allergy_text:
+                        exclude = True
+                        exclude_reason = "allergy_section"
 
-                    # Check if it's a procedural agent (used during procedure, not prescribed)
-                    if med_text in procedural_agents:
-                        # Check if it appears in "injection" context (procedural use)
-                        if f'{med_text} injection' in text_lower or f'injection of {med_text}' in text_lower:
-                            print(f"[MEDICATION FILTER] EXCLUDED (procedural): '{med_text}'", file=sys.stderr)
-                            continue
+                    # Check if medication matches a known allergy drug
+                    if not exclude:
+                        for allergy_drug in allergy_drugs:
+                            if allergy_drug in med_text or med_text in allergy_drug:
+                                exclude = True
+                                exclude_reason = f"allergy_match:{allergy_drug}"
+                                break
 
-                    filtered.append(med)
+                    # Check if it's a procedural agent
+                    if not exclude and med_text in procedural_agents:
+                        # Check if it appears in procedural context
+                        procedural_contexts = [
+                            f'{med_text} injection', f'injection of {med_text}',
+                            f'{med_text} infusion', f'intravenous {med_text}',
+                            f'{med_text} given', f'administered {med_text}',
+                            f'{med_text} was used', f'using {med_text}',
+                            f'induction with {med_text}', f'anaesthetic',
+                            f'anesthetic', f'sedation', f'procedure',
+                        ]
+                        if any(ctx in text_lower for ctx in procedural_contexts):
+                            exclude = True
+                            exclude_reason = "procedural_agent"
+
+                    if exclude:
+                        print(f"[MEDICATION FILTER] EXCLUDED ({exclude_reason}): '{med_text}'", file=sys.stderr)
+                        med["excluded"] = True
+                        med["exclusion_reason"] = exclude_reason
+                    else:
+                        filtered.append(med)
 
                 return filtered
 
@@ -1317,35 +1431,422 @@ def run_comprehend_medical(text: str) -> dict:
         import re as _re_diag
         import sys
 
-        # ICD-10 to SNOMED mapping for common conditions
+        # ICD-10 to SNOMED mapping for common conditions (200+ codes)
         ICD_TO_SNOMED = {
+            # ══ Infectious diseases (A00-B99) ══
+            'A09': ('25374005', 'Gastroenteritis (disorder)'),
+            'A41': ('91302008', 'Sepsis (disorder)'),
+            'A41.9': ('91302008', 'Sepsis (disorder)'),
+            'A49': ('40733004', 'Bacterial infection (disorder)'),
+            'B34': ('34014006', 'Viral infection (disorder)'),
+            'B34.9': ('34014006', 'Viral infection (disorder)'),
+
+            # ══ Neoplasms (C00-D49) ══
+            'C34': ('254637007', 'Lung cancer (disorder)'),
+            'C50': ('254837009', 'Breast cancer (disorder)'),
+            'C61': ('399068003', 'Prostate cancer (disorder)'),
+            'C18': ('363406005', 'Colon cancer (disorder)'),
+            'C20': ('363351006', 'Rectal cancer (disorder)'),
+            'C64': ('93849006', 'Kidney cancer (disorder)'),
+            'C67': ('399326009', 'Bladder cancer (disorder)'),
+            'D50': ('87522002', 'Iron deficiency anemia (disorder)'),
+            'D50.9': ('87522002', 'Iron deficiency anemia (disorder)'),
+            'D64': ('271737000', 'Anemia (disorder)'),
+            'D64.9': ('271737000', 'Anemia (disorder)'),
+
+            # ══ Endocrine/Metabolic (E00-E89) ══
+            'E03': ('40930008', 'Hypothyroidism (disorder)'),
+            'E03.9': ('40930008', 'Hypothyroidism (disorder)'),
+            'E05': ('34486009', 'Hyperthyroidism (disorder)'),
+            'E10': ('46635009', 'Type 1 diabetes mellitus (disorder)'),
+            'E10.9': ('46635009', 'Type 1 diabetes mellitus (disorder)'),
+            'E11': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
+            'E11.9': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
+            'E11.65': ('127013003', 'Diabetic ketoacidosis (disorder)'),
+            'E13': ('73211009', 'Diabetes mellitus (disorder)'),
+            'E66': ('414916001', 'Obesity (disorder)'),
+            'E66.9': ('414916001', 'Obesity (disorder)'),
+            'E78': ('13644009', 'Hyperlipidemia (disorder)'),
+            'E78.0': ('13644009', 'Hypercholesterolemia (disorder)'),
+            'E78.5': ('13644009', 'Hyperlipidemia (disorder)'),
+            'E83.5': ('66999008', 'Hypercalcemia (disorder)'),
+            'E86': ('34095006', 'Dehydration (disorder)'),
+            'E87': ('237840007', 'Electrolyte imbalance (disorder)'),
+            'E87.1': ('89627008', 'Hyponatremia (disorder)'),
+            'E87.6': ('43339004', 'Hypokalemia (disorder)'),
+
+            # ══ Mental/Behavioral (F00-F99) ══
+            'F00': ('26929004', 'Alzheimer disease (disorder)'),
+            'F01': ('429998004', 'Vascular dementia (disorder)'),
+            'F03': ('52448006', 'Dementia (disorder)'),
+            'F10': ('7200002', 'Alcohol dependence (disorder)'),
+            'F10.2': ('7200002', 'Alcohol dependence (disorder)'),
+            'F11': ('75544000', 'Opioid dependence (disorder)'),
+            'F17': ('56294008', 'Tobacco dependence (disorder)'),
+            'F20': ('58214004', 'Schizophrenia (disorder)'),
+            'F31': ('13746004', 'Bipolar disorder (disorder)'),
+            'F32': ('35489007', 'Depressive disorder (disorder)'),
+            'F32.9': ('35489007', 'Depressive disorder (disorder)'),
+            'F33': ('66344007', 'Recurrent depressive disorder (disorder)'),
+            'F41': ('197480006', 'Anxiety disorder (disorder)'),
+            'F41.0': ('371631005', 'Panic disorder (disorder)'),
+            'F41.1': ('21897009', 'Generalized anxiety disorder (disorder)'),
+            'F41.9': ('197480006', 'Anxiety disorder (disorder)'),
+            'F43': ('17226007', 'Adjustment disorder (disorder)'),
+            'F43.1': ('47505003', 'Post-traumatic stress disorder (disorder)'),
+
+            # ══ Nervous system (G00-G99) ══
+            'G20': ('49049000', 'Parkinson disease (disorder)'),
+            'G30': ('26929004', 'Alzheimer disease (disorder)'),
+            'G35': ('24700007', 'Multiple sclerosis (disorder)'),
+            'G40': ('84757009', 'Epilepsy (disorder)'),
+            'G40.9': ('84757009', 'Epilepsy (disorder)'),
+            'G43': ('37796009', 'Migraine (disorder)'),
+            'G43.9': ('37796009', 'Migraine (disorder)'),
+            'G44': ('25064002', 'Headache (finding)'),
+            'G45': ('266257000', 'Transient ischemic attack (disorder)'),
+            'G47': ('39898005', 'Sleep disorder (disorder)'),
+            'G47.3': ('73430006', 'Sleep apnea (disorder)'),
+            'G56': ('57406009', 'Carpal tunnel syndrome (disorder)'),
+            'G62': ('42658009', 'Peripheral neuropathy (disorder)'),
+
+            # ══ Eye disorders (H00-H59) ══
+            'H25': ('193570009', 'Cataract (disorder)'),
+            'H26': ('193570009', 'Cataract (disorder)'),
+            'H40': ('23986001', 'Glaucoma (disorder)'),
+            'H52': ('39021009', 'Refractive error (disorder)'),
+
+            # ══ Ear disorders (H60-H95) ══
+            'H66': ('65363002', 'Otitis media (disorder)'),
+            'H91': ('15188001', 'Hearing loss (disorder)'),
+
+            # ══ Cardiovascular (I00-I99) ══
+            'I10': ('38341003', 'Hypertensive disorder (disorder)'),
+            'I11': ('64715009', 'Hypertensive heart disease (disorder)'),
+            'I13': ('194779001', 'Hypertensive heart and renal disease (disorder)'),
+            'I20': ('194828000', 'Angina pectoris (disorder)'),
+            'I20.0': ('4557003', 'Unstable angina (disorder)'),
+            'I20.9': ('194828000', 'Angina pectoris (disorder)'),
+            'I21': ('22298006', 'Myocardial infarction (disorder)'),
+            'I21.0': ('401303003', 'Anterior STEMI (disorder)'),
+            'I21.1': ('401314000', 'Inferior STEMI (disorder)'),
+            'I21.4': ('401314000', 'NSTEMI (disorder)'),
+            'I21.9': ('22298006', 'Myocardial infarction (disorder)'),
+            'I25': ('53741008', 'Coronary heart disease (disorder)'),
+            'I25.1': ('53741008', 'Coronary heart disease (disorder)'),
+            'I25.10': ('53741008', 'Coronary heart disease (disorder)'),
+            'I26': ('59282003', 'Pulmonary embolism (disorder)'),
+            'I26.9': ('59282003', 'Pulmonary embolism (disorder)'),
+            'I27': ('70995007', 'Pulmonary hypertension (disorder)'),
+            'I42': ('57809008', 'Cardiomyopathy (disorder)'),
+            'I44': ('27885002', 'Heart block (disorder)'),
+            'I47': ('6456007', 'Supraventricular tachycardia (disorder)'),
+            'I48': ('49436004', 'Atrial fibrillation (disorder)'),
+            'I48.0': ('49436004', 'Atrial fibrillation (disorder)'),
+            'I48.1': ('5370000', 'Atrial flutter (disorder)'),
+            'I48.9': ('49436004', 'Atrial fibrillation (disorder)'),
+            'I49': ('698247007', 'Cardiac arrhythmia (disorder)'),
+            'I50': ('84114007', 'Heart failure (disorder)'),
+            'I50.0': ('42343007', 'Congestive heart failure (disorder)'),
+            'I50.1': ('48447003', 'Left ventricular failure (disorder)'),
+            'I50.9': ('84114007', 'Heart failure (disorder)'),
+            'I51': ('56265001', 'Heart disease (disorder)'),
+            'I60': ('274100004', 'Subarachnoid hemorrhage (disorder)'),
+            'I61': ('274100004', 'Intracerebral hemorrhage (disorder)'),
+            'I63': ('422504002', 'Ischemic stroke (disorder)'),
+            'I63.9': ('422504002', 'Ischemic stroke (disorder)'),
+            'I64': ('230690007', 'Stroke (disorder)'),
+            'I65': ('64586002', 'Carotid artery stenosis (disorder)'),
+            'I67': ('62914000', 'Cerebrovascular disease (disorder)'),
+            'I70': ('38716007', 'Atherosclerosis (disorder)'),
+            'I71': ('233985008', 'Aortic aneurysm (disorder)'),
+            'I73': ('400047006', 'Peripheral vascular disease (disorder)'),
+            'I80': ('128053003', 'Deep vein thrombosis (disorder)'),
+            'I80.2': ('128053003', 'Deep vein thrombosis (disorder)'),
+            'I82': ('111293003', 'Venous thrombosis (disorder)'),
+            'I83': ('128060009', 'Varicose veins (disorder)'),
+            'I87': ('234042001', 'Chronic venous insufficiency (disorder)'),
+
+            # ══ Respiratory (J00-J99) ══
+            'J00': ('82272006', 'Common cold (disorder)'),
+            'J02': ('90176007', 'Pharyngitis (disorder)'),
+            'J03': ('17741008', 'Tonsillitis (disorder)'),
+            'J06': ('54150009', 'Upper respiratory infection (disorder)'),
+            'J06.9': ('54150009', 'Upper respiratory infection (disorder)'),
+            'J09': ('442696006', 'Influenza (disorder)'),
+            'J11': ('442696006', 'Influenza (disorder)'),
+            'J12': ('75570004', 'Viral pneumonia (disorder)'),
+            'J15': ('53084003', 'Bacterial pneumonia (disorder)'),
+            'J18': ('233604007', 'Pneumonia (disorder)'),
+            'J18.9': ('233604007', 'Pneumonia (disorder)'),
+            'J20': ('32398004', 'Acute bronchitis (disorder)'),
+            'J21': ('4120002', 'Bronchiolitis (disorder)'),
+            'J22': ('50417007', 'Lower respiratory infection (disorder)'),
+            'J30': ('61582004', 'Allergic rhinitis (disorder)'),
+            'J32': ('40055000', 'Chronic sinusitis (disorder)'),
+            'J34': ('36971009', 'Sinusitis (disorder)'),
+            'J38': ('45913009', 'Laryngitis (disorder)'),
+            'J40': ('32398004', 'Bronchitis (disorder)'),
+            'J42': ('63480004', 'Chronic bronchitis (disorder)'),
+            'J43': ('87433001', 'Pulmonary emphysema (disorder)'),
+            'J44': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
+            'J44.0': ('195951007', 'Acute exacerbation of COPD (disorder)'),
+            'J44.1': ('195951007', 'Acute exacerbation of COPD (disorder)'),
+            'J44.9': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
+            'J45': ('195967001', 'Asthma (disorder)'),
+            'J45.2': ('195967001', 'Asthma (disorder)'),
+            'J45.9': ('195967001', 'Asthma (disorder)'),
+            'J46': ('304527002', 'Acute severe asthma (disorder)'),
+            'J47': ('12295008', 'Bronchiectasis (disorder)'),
+            'J80': ('67782005', 'Acute respiratory distress syndrome (disorder)'),
+            'J81': ('19242006', 'Pulmonary edema (disorder)'),
+            'J84': ('51615001', 'Pulmonary fibrosis (disorder)'),
+            'J90': ('60046008', 'Pleural effusion (disorder)'),
+            'J93': ('36118008', 'Pneumothorax (disorder)'),
+            'J96': ('65710008', 'Respiratory failure (disorder)'),
+            'J96.0': ('65710008', 'Acute respiratory failure (disorder)'),
+
+            # ══ Digestive system (K00-K95) ══
+            'K04': ('109600005', 'Dental abscess (disorder)'),
+            'K21': ('235595009', 'Gastro-esophageal reflux disease (disorder)'),
+            'K21.0': ('235595009', 'Gastro-esophageal reflux disease (disorder)'),
+            'K25': ('13200003', 'Peptic ulcer (disorder)'),
+            'K26': ('51868009', 'Duodenal ulcer (disorder)'),
+            'K27': ('13200003', 'Peptic ulcer (disorder)'),
+            'K29': ('4556007', 'Gastritis (disorder)'),
+            'K30': ('162031009', 'Dyspepsia (disorder)'),
+            'K35': ('74400008', 'Appendicitis (disorder)'),
+            'K35.8': ('85189001', 'Acute appendicitis (disorder)'),
+            'K40': ('396232000', 'Inguinal hernia (disorder)'),
+            'K42': ('236037000', 'Umbilical hernia (disorder)'),
+            'K43': ('414396006', 'Incisional hernia (disorder)'),
+            'K44': ('84089009', 'Hiatal hernia (disorder)'),
+            'K50': ('34000006', 'Crohn disease (disorder)'),
+            'K51': ('64766004', 'Ulcerative colitis (disorder)'),
+            'K52': ('24526004', 'Inflammatory bowel disease (disorder)'),
+            'K55': ('399122003', 'Mesenteric ischemia (disorder)'),
+            'K56': ('81060008', 'Intestinal obstruction (disorder)'),
+            'K57': ('397881000', 'Diverticular disease (disorder)'),
+            'K57.3': ('427910000', 'Diverticulitis (disorder)'),
+            'K58': ('10743008', 'Irritable bowel syndrome (disorder)'),
+            'K59': ('14760008', 'Constipation (disorder)'),
+            'K60': ('399096009', 'Anal fissure (disorder)'),
+            'K61': ('399096009', 'Anal abscess (disorder)'),
+            'K62': ('423902002', 'Rectal bleeding (finding)'),
+            'K63': ('34093004', 'Intestinal disorder (disorder)'),
             'K64': ('70153002', 'Hemorrhoids (disorder)'),
-            'K64.9': ('70153002', 'Hemorrhoids (disorder)'),
             'K64.0': ('90458007', 'First degree hemorrhoids (disorder)'),
             'K64.1': ('90459004', 'Second degree hemorrhoids (disorder)'),
             'K64.2': ('90460009', 'Third degree hemorrhoids (disorder)'),
             'K64.3': ('90461008', 'Fourth degree hemorrhoids (disorder)'),
-            'I10': ('38341003', 'Hypertensive disorder (disorder)'),
-            'E11': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
-            'J44': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
-            'F32': ('35489007', 'Depressive disorder (disorder)'),
+            'K64.9': ('70153002', 'Hemorrhoids (disorder)'),
+            'K70': ('235875008', 'Alcoholic liver disease (disorder)'),
+            'K72': ('59927004', 'Hepatic failure (disorder)'),
+            'K74': ('19943007', 'Cirrhosis of liver (disorder)'),
+            'K76': ('235856003', 'Fatty liver (disorder)'),
+            'K80': ('235919008', 'Cholelithiasis (disorder)'),
+            'K81': ('65275009', 'Cholecystitis (disorder)'),
+            'K85': ('197456007', 'Acute pancreatitis (disorder)'),
+            'K86': ('235494005', 'Chronic pancreatitis (disorder)'),
+            'K92': ('74474003', 'Gastrointestinal hemorrhage (disorder)'),
+            'K92.0': ('37372002', 'Hematemesis (finding)'),
+            'K92.1': ('2901004', 'Melena (finding)'),
+
+            # ══ Skin (L00-L99) ══
+            'L02': ('399959002', 'Skin abscess (disorder)'),
+            'L03': ('128045006', 'Cellulitis (disorder)'),
+            'L08': ('95320005', 'Skin infection (disorder)'),
+            'L20': ('24079001', 'Atopic dermatitis (disorder)'),
+            'L21': ('50563003', 'Seborrheic dermatitis (disorder)'),
+            'L23': ('238575004', 'Allergic contact dermatitis (disorder)'),
+            'L30': ('43116000', 'Dermatitis (disorder)'),
+            'L40': ('9014002', 'Psoriasis (disorder)'),
+            'L50': ('126485001', 'Urticaria (disorder)'),
+            'L70': ('88616000', 'Acne (disorder)'),
+            'L97': ('95345008', 'Leg ulcer (disorder)'),
+            'L98': ('201101007', 'Skin ulcer (disorder)'),
+
+            # ══ Musculoskeletal (M00-M99) ══
+            'M05': ('69896004', 'Rheumatoid arthritis (disorder)'),
+            'M06': ('69896004', 'Rheumatoid arthritis (disorder)'),
+            'M10': ('90560007', 'Gout (disorder)'),
+            'M13': ('3723001', 'Arthritis (disorder)'),
+            'M15': ('396275006', 'Osteoarthritis (disorder)'),
+            'M16': ('239872002', 'Hip osteoarthritis (disorder)'),
+            'M17': ('239873007', 'Knee osteoarthritis (disorder)'),
+            'M19': ('396275006', 'Osteoarthritis (disorder)'),
+            'M25': ('57676002', 'Joint pain (finding)'),
+            'M32': ('55464009', 'Systemic lupus erythematosus (disorder)'),
+            'M34': ('89155008', 'Systemic sclerosis (disorder)'),
+            'M35': ('396332003', 'Connective tissue disease (disorder)'),
+            'M41': ('298382003', 'Scoliosis (disorder)'),
+            'M43': ('278860009', 'Spinal stenosis (disorder)'),
+            'M47': ('387800002', 'Spondylosis (disorder)'),
+            'M48': ('278860009', 'Spinal stenosis (disorder)'),
+            'M50': ('76107001', 'Cervical disc disorder (disorder)'),
+            'M51': ('243796009', 'Lumbar disc disorder (disorder)'),
             'M54': ('161891005', 'Backache (finding)'),
+            'M54.5': ('279039007', 'Low back pain (finding)'),
+            'M62': ('68962001', 'Myalgia (finding)'),
+            'M65': ('34840004', 'Tendinitis (disorder)'),
+            'M72': ('302192005', 'Plantar fasciitis (disorder)'),
+            'M75': ('45326000', 'Shoulder disorder (disorder)'),
+            'M77': ('202855006', 'Enthesopathy (disorder)'),
+            'M79': ('36083008', 'Fibromyalgia (disorder)'),
+            'M79.3': ('57406009', 'Panniculitis (disorder)'),
+            'M80': ('64859006', 'Osteoporosis with fracture (disorder)'),
+            'M81': ('64859006', 'Osteoporosis (disorder)'),
+
+            # ══ Genitourinary (N00-N99) ══
+            'N10': ('45816000', 'Pyelonephritis (disorder)'),
+            'N12': ('45816000', 'Pyelonephritis (disorder)'),
+            'N13': ('236463006', 'Hydronephrosis (disorder)'),
+            'N17': ('14669001', 'Acute kidney injury (disorder)'),
+            'N17.9': ('14669001', 'Acute kidney injury (disorder)'),
+            'N18': ('709044004', 'Chronic kidney disease (disorder)'),
+            'N18.1': ('431855005', 'CKD stage 1 (disorder)'),
+            'N18.2': ('431856006', 'CKD stage 2 (disorder)'),
+            'N18.3': ('433144002', 'CKD stage 3 (disorder)'),
+            'N18.4': ('431857002', 'CKD stage 4 (disorder)'),
+            'N18.5': ('433146000', 'CKD stage 5 (disorder)'),
+            'N18.9': ('709044004', 'Chronic kidney disease (disorder)'),
+            'N19': ('42399005', 'Renal failure (disorder)'),
+            'N20': ('95570007', 'Kidney stone (disorder)'),
+            'N23': ('95570007', 'Kidney stone (disorder)'),
+            'N28': ('90708001', 'Kidney disease (disorder)'),
+            'N30': ('38822007', 'Cystitis (disorder)'),
+            'N32': ('197854006', 'Bladder disorder (disorder)'),
+            'N39': ('68566005', 'Urinary tract infection (disorder)'),
+            'N39.0': ('68566005', 'Urinary tract infection (disorder)'),
+            'N40': ('266569009', 'Benign prostatic hyperplasia (disorder)'),
+            'N41': ('9713002', 'Prostatitis (disorder)'),
+            'N45': ('31070006', 'Epididymitis (disorder)'),
+            'N81': ('30288003', 'Pelvic organ prolapse (disorder)'),
+            'N92': ('386692008', 'Menorrhagia (disorder)'),
+            'N94': ('431416004', 'Dysmenorrhea (finding)'),
+            'N95': ('161712005', 'Menopausal syndrome (disorder)'),
+
+            # ══ Pregnancy/Childbirth (O00-O99) ══
+            'O00': ('34801009', 'Ectopic pregnancy (disorder)'),
+            'O03': ('17369002', 'Miscarriage (disorder)'),
+            'O10': ('48194001', 'Pre-existing hypertension (disorder)'),
+            'O14': ('15938005', 'Pre-eclampsia (disorder)'),
+            'O24': ('11687002', 'Gestational diabetes (disorder)'),
+            'O42': ('289259007', 'Premature rupture of membranes (disorder)'),
+            'O60': ('282020008', 'Preterm labor (disorder)'),
+            'O72': ('47821001', 'Postpartum hemorrhage (disorder)'),
+
+            # ══ Perinatal (P00-P96) ══
+            'P07': ('395507008', 'Low birth weight (finding)'),
+            'P22': ('46775006', 'Respiratory distress of newborn (disorder)'),
+            'P59': ('387712008', 'Neonatal jaundice (disorder)'),
+
+            # ══ Congenital (Q00-Q99) ══
+            'Q21': ('253273004', 'Congenital heart defect (disorder)'),
+            'Q25': ('13213009', 'Congenital heart defect (disorder)'),
+
+            # ══ Symptoms/Signs (R00-R99) ══
+            'R00': ('80313002', 'Palpitations (finding)'),
+            'R04': ('66857006', 'Hemoptysis (finding)'),
+            'R05': ('49727002', 'Cough (finding)'),
+            'R06': ('267036007', 'Dyspnea (finding)'),
+            'R06.0': ('267036007', 'Dyspnea (finding)'),
+            'R07': ('29857009', 'Chest pain (finding)'),
+            'R07.4': ('29857009', 'Chest pain (finding)'),
+            'R09': ('409668002', 'Respiratory symptom (finding)'),
+            'R10': ('21522001', 'Abdominal pain (finding)'),
+            'R10.4': ('21522001', 'Abdominal pain (finding)'),
+            'R11': ('422400008', 'Vomiting (disorder)'),
+            'R13': ('40739000', 'Dysphagia (disorder)'),
+            'R19': ('62315008', 'Diarrhea (finding)'),
+            'R20': ('279079003', 'Paresthesia (finding)'),
+            'R21': ('271807003', 'Rash (finding)'),
+            'R25': ('26079004', 'Tremor (finding)'),
+            'R26': ('22325002', 'Gait abnormality (finding)'),
+            'R31': ('34436003', 'Hematuria (finding)'),
+            'R32': ('165232002', 'Urinary incontinence (finding)'),
+            'R33': ('267064002', 'Urinary retention (disorder)'),
+            'R35': ('162116003', 'Polyuria (finding)'),
+            'R40': ('271594007', 'Stupor (finding)'),
+            'R41': ('386807006', 'Memory impairment (finding)'),
+            'R42': ('404640003', 'Dizziness (finding)'),
+            'R50': ('386661006', 'Fever (finding)'),
+            'R51': ('25064002', 'Headache (finding)'),
+            'R52': ('22253000', 'Pain (finding)'),
+            'R53': ('84229001', 'Fatigue (finding)'),
+            'R55': ('271594007', 'Syncope (disorder)'),
+            'R56': ('91175000', 'Seizure (finding)'),
+            'R57': ('27942005', 'Shock (disorder)'),
+            'R60': ('79654002', 'Edema (finding)'),
+            'R63': ('64379006', 'Weight loss (finding)'),
+            'R73': ('80394007', 'Hyperglycemia (disorder)'),
+
+            # ══ Injuries (S00-T98) ══
+            'S00': ('125605004', 'Head injury (disorder)'),
+            'S06': ('127295002', 'Traumatic brain injury (disorder)'),
+            'S22': ('263102004', 'Rib fracture (disorder)'),
+            'S32': ('414564002', 'Hip fracture (disorder)'),
+            'S42': ('64665009', 'Shoulder fracture (disorder)'),
+            'S52': ('30400009', 'Forearm fracture (disorder)'),
+            'S62': ('416393002', 'Hand fracture (disorder)'),
+            'S72': ('414564002', 'Hip fracture (disorder)'),
+            'S82': ('373766000', 'Lower leg fracture (disorder)'),
+            'T78': ('419076005', 'Allergic reaction (disorder)'),
+            'T78.2': ('39579001', 'Anaphylaxis (disorder)'),
+
+            # ══ External causes (V00-Y99) ══
+            'W19': ('217082002', 'Fall (event)'),
+
+            # ══ Factors influencing health (Z00-Z99) ══
+            'Z85': ('161432005', 'History of malignancy (situation)'),
+            'Z86': ('312850006', 'History of disease (situation)'),
+            'Z87': ('312850006', 'History of disease (situation)'),
+            'Z95': ('429064006', 'Presence of cardiac device (finding)'),
+            'Z96': ('407585007', 'Presence of implant (finding)'),
         }
 
-        # Try pattern for "Diagnosis\nPost-op Diagnosis\n* Haemorrhoids [K64.9]"
-        # Use DOTALL so .* can match across newlines
-        diag_section_match = _re_diag.search(
-            r'Diagnosis\s*[\n\r](?:.*?[\n\r])*?\s*\*\s*([A-Za-z][^\[\n]{2,40})\s*\[([A-Z]\d+\.?\d*)\]',
-            text, _re_diag.IGNORECASE | _re_diag.MULTILINE
-        )
+        # Multi-pattern diagnosis extraction - try multiple formats
+        DIAGNOSIS_PATTERNS = [
+            # Pattern 1: "Diagnosis\n* Condition [ICD]" or "Post-op Diagnosis\n* Condition [ICD]"
+            (r'(?:Post-?op\s+)?Diagnosis\s*[\n\r](?:.*?[\n\r])*?\s*\*\s*([A-Za-z][^\[\n]{2,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
+            # Pattern 2: "1. Condition [ICD]" or "- Condition [ICD]" after Diagnosis header
+            (r'Diagnos[ie]s?[:\s]*[\n\r](?:.*?[\n\r])*?(?:\d+\.|-)\s*([A-Za-z][^\[\n]{2,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
+            # Pattern 3: "Condition (ICD-10: K64.9)" or "Condition (K64.9)"
+            (r'Diagnos[ie]s?[:\s]*[\n\r](?:.*?[\n\r])*?([A-Za-z][^\(\n]{3,50})\s*\((?:ICD-?10)?[:\s]*([A-Z]\d+\.?\d*)\)', True),
+            # Pattern 4: "Principal/Primary diagnosis: Condition" (no ICD code)
+            (r'(?:Principal|Primary|Main|Presenting)\s+[Dd]iagnos[ie]s?[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
+            # Pattern 5: "Admitted with/for: Condition" (no ICD code)
+            (r'(?:Admitted|Presented|Attending)\s+(?:with|for)[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
+            # Pattern 6: "Reason for admission: Condition" (no ICD code)
+            (r'(?:Reason|Cause)\s+(?:for|of)\s+(?:admission|referral|attendance)[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
+            # Pattern 7: Table format "| Condition | K64.9 |"
+            (r'\|\s*([A-Za-z][^\|]{3,50})\s*\|\s*([A-Z]\d+\.?\d*)\s*\|', True),
+            # Pattern 8: "Diagnosis: Condition [ICD]" inline
+            (r'Diagnos[ie]s?[:\s]+([A-Za-z][^\[\n]{3,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
+            # Pattern 9: "Final diagnosis: Condition"
+            (r'(?:Final|Confirmed|Working)\s+[Dd]iagnos[ie]s?[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
+        ]
 
-        if diag_section_match:
-            diag_term = diag_section_match.group(1).strip()
-            icd_code = diag_section_match.group(2).strip() if diag_section_match.lastindex >= 2 else None
+        existing_diag_texts = {d.get("text", "").lower() for d in diagnoses}
+        extracted_count = 0
 
-            # Check if diagnosis already exists
-            existing_diag_texts = {d.get("text", "").lower() for d in diagnoses}
-            if diag_term.lower() not in existing_diag_texts:
+        for pattern, has_icd in DIAGNOSIS_PATTERNS:
+            if extracted_count >= 5:  # Limit to prevent over-extraction
+                break
+
+            for match in _re_diag.finditer(pattern, text, _re_diag.IGNORECASE | _re_diag.MULTILINE):
+                diag_term = match.group(1).strip()
+                icd_code = match.group(2).strip() if has_icd and match.lastindex >= 2 else None
+
+                # Skip if already extracted or too short
+                if diag_term.lower() in existing_diag_texts or len(diag_term) < 3:
+                    continue
+
+                # Skip common false positives
+                skip_terms = {'patient', 'please', 'follow', 'review', 'continue', 'discharge', 'summary'}
+                if diag_term.lower().split()[0] in skip_terms:
+                    continue
+
                 # Try to get SNOMED code from ICD mapping
                 snomed_code = None
                 snomed_desc = None
@@ -1357,7 +1858,7 @@ def run_comprehend_medical(text: str) -> dict:
                     if icd_prefix in ICD_TO_SNOMED:
                         snomed_code, snomed_desc = ICD_TO_SNOMED[icd_prefix]
 
-                # If no mapping, try Comprehend lookup
+                # If no ICD or no mapping, try Comprehend lookup
                 if not snomed_code:
                     try:
                         _diag_client = make_client("comprehendmedical")
@@ -1367,8 +1868,9 @@ def run_comprehend_medical(text: str) -> dict:
                             concepts = diag_entities[0].get("SNOMEDCTConcepts", [])
                             if concepts:
                                 top = max(concepts, key=lambda c: c.get("Score", 0))
-                                snomed_code = top.get("Code")
-                                snomed_desc = top.get("Description")
+                                if top.get("Score", 0) >= 0.5:  # Only accept high-confidence
+                                    snomed_code = top.get("Code")
+                                    snomed_desc = top.get("Description")
                     except Exception:
                         pass
 
@@ -1378,17 +1880,19 @@ def run_comprehend_medical(text: str) -> dict:
                         "category": "DIAGNOSIS",
                         "snomed_code": snomed_code,
                         "description": snomed_desc or diag_term,
-                        "confidence": 0.85,
+                        "confidence": 0.90 if icd_code else 0.75,  # Higher if has ICD code
                         "entity_id": str(uuid.uuid4())[:8],
                         "source": "diagnosis_section_extraction",
                         "clinical_category": "diagnoses",
                         "icd_code": icd_code,
-                        "start_pos": diag_section_match.start(1),
-                        "end_pos": diag_section_match.end(1),
+                        "start_pos": match.start(1),
+                        "end_pos": match.end(1),
                     }
                     diagnoses.append(diag_entry)
                     all_entities.append(diag_entry)
-                    print(f"[DEBUG] Extracted diagnosis from section: '{diag_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+                    existing_diag_texts.add(diag_term.lower())
+                    extracted_count += 1
+                    print(f"[DEBUG] Extracted diagnosis from section: '{diag_term}' -> SNOMED {snomed_code} (ICD: {icd_code})", file=sys.stderr)
 
     except Exception as e:
         import sys
@@ -1458,7 +1962,47 @@ def run_comprehend_medical(text: str) -> dict:
             print(f"[WARN] Temporal reasoning failed: {e}", file=sys.stderr)
             validation_warnings.append(f"Temporal reasoning error: {e}")
 
-    # Calculate confidence
+    # ── Confidence Calibration: Adjust confidence based on evidence quality ────────
+    def calibrate_entity_confidence(entity: dict) -> float:
+        """Adjust confidence based on extraction source and evidence quality."""
+        base = entity.get("confidence", 0.5)
+        source = entity.get("source", "")
+
+        # Boost if from explicit diagnosis section with ICD code
+        if source == "diagnosis_section_extraction":
+            if entity.get("icd_code"):
+                base = min(0.95, base * 1.15)  # Has ICD code = high confidence
+            else:
+                base = min(0.90, base * 1.05)  # From section but no ICD
+
+        # Penalize if from semantic fallback (lower reliability)
+        if source == "semantic_fallback" or entity.get("used_fallback"):
+            base *= 0.80
+
+        # Penalize if OCR corrected (might be wrong correction)
+        if entity.get("ocr_corrected"):
+            base *= 0.90
+
+        # Boost if has strong SNOMED description match
+        text_lower = entity.get("text", "").lower()
+        desc_lower = entity.get("description", "").lower()
+        if text_lower and desc_lower:
+            # If text is substring of description or vice versa, boost confidence
+            if text_lower in desc_lower or desc_lower.split('(')[0].strip() in text_lower:
+                base = min(0.95, base * 1.05)
+
+        # Penalize very short entities (likely false positives)
+        if len(entity.get("text", "")) < 4:
+            base *= 0.85
+
+        return round(max(0.1, min(1.0, base)), 3)
+
+    # Apply calibration to all entities
+    for bucket in [problems, treatments, medications, investigations, diagnoses]:
+        for entity in bucket:
+            entity["confidence"] = calibrate_entity_confidence(entity)
+
+    # Calculate overall confidence
     if all_entities:
         snomed_conf = sum(e.get("confidence", 0) for e in all_entities) / len(all_entities)
     else:
