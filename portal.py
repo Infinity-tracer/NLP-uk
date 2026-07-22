@@ -1379,9 +1379,50 @@ def run_comprehend_medical(text: str) -> dict:
                     print(f"[EXTRACT] Medication: '{med_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ── TREATMENT EXTRACTOR ──
+    # Common procedure SNOMED codes
+    PROCEDURE_SNOMED = {
+        'flexible sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
+        'sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
+        'colonoscopy': ('73761001', 'Colonoscopy (procedure)'),
+        'endoscopy': ('423827005', 'Endoscopy (procedure)'),
+        'gastroscopy': ('386792006', 'Gastroscopy (procedure)'),
+        'excision of skin tag': ('309430005', 'Excision of skin tag (procedure)'),
+        'excision of skin tags': ('309430005', 'Excision of skin tag (procedure)'),
+        'skin tag excision': ('309430005', 'Excision of skin tag (procedure)'),
+        'eua': ('8996009', 'Examination under anesthesia (procedure)'),
+        'examination under anaesthesia': ('8996009', 'Examination under anesthesia (procedure)'),
+        'examination under anesthesia': ('8996009', 'Examination under anesthesia (procedure)'),
+        'phenol injection': ('174483005', 'Injection of phenol into hemorrhoid (procedure)'),
+        'injection of haemorrhoids': ('174483005', 'Injection of phenol into hemorrhoid (procedure)'),
+        'banding of haemorrhoids': ('174481007', 'Ligation of hemorrhoid (procedure)'),
+        'haemorrhoidectomy': ('236083002', 'Hemorrhoidectomy (procedure)'),
+        'rectal biopsy': ('54686006', 'Biopsy of rectum (procedure)'),
+        'biopsy': ('86273004', 'Biopsy (procedure)'),
+        'incision and drainage': ('10019008', 'Incision and drainage (procedure)'),
+        'appendicectomy': ('80146002', 'Appendectomy (procedure)'),
+        'cholecystectomy': ('38102005', 'Cholecystectomy (procedure)'),
+        'hernia repair': ('44946007', 'Herniorrhaphy (procedure)'),
+    }
+
     # Extract from treatment/procedure section
     if treatment_section:
-        # Look for procedure descriptions
+        print(f"[TREAT-DEBUG] Treatment section (first 500): {treatment_section[:500]}", file=sys.stderr)
+
+        # First check for known procedures
+        for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
+            if re.search(re.escape(proc_name), treatment_section, re.IGNORECASE):
+                if proc_name.lower() not in seen_texts:
+                    entity = create_entity(
+                        text=proc_name, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.90, category="TREATMENT",
+                        clinical_category="treatments", source="treatment_section"
+                    )
+                    treatments.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(proc_name.lower())
+                    print(f"[EXTRACT] Treatment (known): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+        # Then try pattern-based extraction for unknown procedures
         proc_patterns = [
             r'[\*\-•]\s*([A-Za-z][^\n]{5,80})',
             r'\d+\.\s*([A-Za-z][^\n]{5,80})',
@@ -1407,38 +1448,64 @@ def run_comprehend_medical(text: str) -> dict:
                     print(f"[EXTRACT] Treatment: '{proc_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ── INVESTIGATION EXTRACTOR ──
+    # Known investigation/specimen SNOMED codes
+    INVESTIGATION_SNOMED = {
+        'rectal biopsy': ('309262006', 'Rectal biopsy sample (specimen)'),
+        'rectal tissue': ('309200000', 'Tissue specimen from rectum (specimen)'),
+        'rectum tissue': ('309200000', 'Tissue specimen from rectum (specimen)'),
+        'anal tissue': ('128156008', 'Tissue specimen from anus (specimen)'),
+        'anus tissue': ('128156008', 'Tissue specimen from anus (specimen)'),
+        'anal biopsy': ('309261004', 'Anal biopsy sample (specimen)'),
+        'skin biopsy': ('309063002', 'Skin biopsy sample (specimen)'),
+        'colon biopsy': ('309260003', 'Colonic biopsy sample (specimen)'),
+        'flexible sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
+        'sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
+        'colonoscopy': ('73761001', 'Colonoscopy (procedure)'),
+        'histology': ('117678005', 'Histopathology (procedure)'),
+        'blood test': ('396550006', 'Blood test (procedure)'),
+        'ct scan': ('77477000', 'Computed tomography (procedure)'),
+        'mri scan': ('113091000', 'Magnetic resonance imaging (procedure)'),
+        'x-ray': ('363680008', 'X-ray (procedure)'),
+        'ultrasound': ('16310003', 'Ultrasonography (procedure)'),
+        'ecg': ('29303009', 'Electrocardiographic procedure (procedure)'),
+    }
+
     # Extract from investigation/specimen section
     if investigation_section:
-        # Only extract well-formed investigation terms
+        print(f"[INV-DEBUG] Investigation section (first 500): {investigation_section[:500]}", file=sys.stderr)
+
+        # First check for known investigations/specimens
+        for inv_name, (snomed_code, snomed_desc) in INVESTIGATION_SNOMED.items():
+            if re.search(re.escape(inv_name), investigation_section, re.IGNORECASE):
+                if inv_name.lower() not in seen_texts:
+                    entity = create_entity(
+                        text=inv_name, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.85, category="INVESTIGATION",
+                        clinical_category="investigations", source="investigation_section"
+                    )
+                    investigations.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(inv_name.lower())
+                    print(f"[EXTRACT] Investigation (known): '{inv_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+        # Pattern-based extraction for other specimens
         inv_patterns = [
-            # Specific specimen patterns with body part
             r'((?:Rectum|Rectal|Anus|Anal|Colon|Skin|Breast|Liver|Lung)\s+(?:Tissue|Biopsy|Specimen|Sample))',
-            # Biopsy patterns
             r'((?:Rectal|Anal|Skin|Core|Punch|Incisional|Excisional)\s+Biopsy)',
-            # Histology/pathology
-            r'(HISTOLOGY[,\s]+TISSUE)',
-            # Imaging patterns
             r'((?:CT|MRI|X-ray|Ultrasound|ECG|EKG)\s+[A-Za-z\s]{0,30})',
-            # Blood tests
             r'((?:Blood|Urine|Stool)\s+(?:test|sample|culture|analysis))',
         ]
 
         for pattern in inv_patterns:
             for match in re.finditer(pattern, investigation_section, re.IGNORECASE):
                 inv_term = match.group(1).strip()
-                # Minimum length and already-seen check
                 if inv_term.lower() in seen_texts or len(inv_term) < 6:
                     continue
-                # Must start with capital letter (proper clinical term)
                 if not inv_term[0].isupper():
-                    continue
-                # Must have at least 2 words or be a known single-word test
-                if ' ' not in inv_term and inv_term.lower() not in {'histology', 'pathology', 'biopsy', 'ultrasound'}:
                     continue
 
                 snomed_code, snomed_desc, conf = lookup_snomed(inv_term, client)
                 if snomed_code:
-                    # Only accept valid investigation-related SNOMED codes
                     desc_lower = snomed_desc.lower() if snomed_desc else ""
                     if any(x in desc_lower for x in ['specimen', 'sample', 'biopsy', 'test', 'procedure',
                                                       'imaging', 'scan', 'examination', 'measurement', 'tissue']):
