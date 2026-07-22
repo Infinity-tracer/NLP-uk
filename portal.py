@@ -1000,26 +1000,26 @@ def run_comprehend_medical(text: str) -> dict:
     ]
 
     MEDICATION_HEADERS = [
-        'medication', 'medications', 'your medication', 'your medications',
-        'discharge medication', 'discharge medications', 'tta', 'tto',
-        'take home medication', 'current medication', 'current medications',
+        'your medication list', 'medication list', 'your medication', 'your medications',
+        'medication', 'medications', 'discharge medication', 'discharge medications',
+        'tta', 'tto', 'take home medication', 'current medication', 'current medications',
         'regular medication', 'regular medications', 'to take away',
-        'medication list', 'drug', 'drugs', 'prescription',
-        'continue medication', 'continue medications', 'prescribed',
+        'drug', 'drugs', 'prescription', 'continue medication', 'continue medications',
+        'continue taking this medication', 'prescribed',
     ]
 
     TREATMENT_HEADERS = [
-        'procedure', 'procedures', 'procedure performed', 'operation',
-        'operation performed', 'operative procedure', 'surgical procedure',
-        'treatment', 'treatment given', 'therapy', 'intervention',
-        'procedure information', 'operative findings',
+        'procedure information', 'procedure', 'procedures', 'procedure performed',
+        'procedure(s)', 'operation', 'operation performed', 'operative procedure',
+        'surgical procedure', 'treatment', 'treatment given', 'therapy',
+        'intervention', 'operative findings', 'procedure(s) (lrb)',
     ]
 
     INVESTIGATION_HEADERS = [
-        'investigation', 'investigations', 'specimen', 'specimens',
-        'histology', 'pathology', 'laboratory', 'lab results',
+        'investigations pending at discharge', 'investigation', 'investigations',
+        'specimens', 'specimen', 'histology', 'pathology', 'laboratory', 'lab results',
         'imaging', 'radiology', 'x-ray', 'scan', 'mri', 'ct',
-        'blood test', 'blood tests', 'test results', 'results',
+        'blood test', 'blood tests', 'test results', 'results', 'unresulted labs',
     ]
 
     PROBLEMS_HEADERS = [
@@ -1202,12 +1202,14 @@ def run_comprehend_medical(text: str) -> dict:
     # ── MEDICATION EXTRACTOR ──
     # Extract from medication section
     if medication_section:
-        # Common medication patterns
+        # Common medication patterns - order matters, most specific first
         med_patterns = [
-            # "Paracetamol 500mg" or "Paracetamol 500 mg"
+            # Bold drug name at start of line: "lansoprazole 15mg..." or "paracetamol 500mg..."
+            r'(?:^|\n)\s*([a-zA-Z][a-zA-Z\-]+(?:\s+(?:compound|complex|forte|retard))?)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
+            # "Paracetamol 500mg" or "Paracetamol 500 mg" inline
             r'([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
-            # "Paracetamol tablets"
-            r'([A-Za-z][A-Za-z\-]+)\s+(?:tablets?|capsules?|injection|solution|cream|ointment)\b',
+            # "Paracetamol tablets/capsules" etc.
+            r'([A-Za-z][A-Za-z\-]+)\s+(?:tablets?|capsules?|injection|solution|cream|ointment|powder|oral|gastro[- ]resistant)\b',
             # Bullet point medications "- Paracetamol"
             r'[\*\-•]\s*([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s*(?:\d|$|\n)',
             # Numbered list "1. Paracetamol"
@@ -1219,10 +1221,16 @@ def run_comprehend_medical(text: str) -> dict:
                 med_term = match.group(1).strip()
                 if med_term.lower() in seen_texts or len(med_term) < 3:
                     continue
-                # Skip non-medication words
+                # Skip non-medication words and common OCR noise
                 skip_words = {'continue', 'take', 'stop', 'start', 'increase', 'decrease', 'review',
-                              'patient', 'please', 'with', 'food', 'water', 'daily', 'twice', 'once'}
+                              'patient', 'please', 'with', 'food', 'water', 'daily', 'twice', 'once',
+                              'instructions', 'given', 'dose', 'next', 'last', 'day', 'days', 'week',
+                              'one', 'two', 'three', 'four', 'tablet', 'capsule', 'sachet', 'required',
+                              'crush', 'chew', 'meal', 'meals', 'only', 'pain', 'sugar', 'free', 'oral'}
                 if med_term.lower() in skip_words:
+                    continue
+                # Skip if too short or looks like OCR noise
+                if len(med_term) < 4 or not med_term[0].isalpha():
                     continue
 
                 snomed_code, snomed_desc, conf = lookup_snomed(med_term, client)
@@ -1268,30 +1276,48 @@ def run_comprehend_medical(text: str) -> dict:
     # ── INVESTIGATION EXTRACTOR ──
     # Extract from investigation/specimen section
     if investigation_section:
+        # Only extract well-formed investigation terms
         inv_patterns = [
-            r'[\*\-•]\s*([A-Za-z][^\n]{3,60})',
-            r'\d+\.\s*([A-Za-z][^\n]{3,60})',
-            r'([A-Za-z]+\s+(?:specimen|tissue|biopsy|sample))',
-            r'((?:CT|MRI|X-ray|Ultrasound|ECG|EKG|Blood test)[^\n]{0,40})',
+            # Specific specimen patterns with body part
+            r'((?:Rectum|Rectal|Anus|Anal|Colon|Skin|Breast|Liver|Lung)\s+(?:Tissue|Biopsy|Specimen|Sample))',
+            # Biopsy patterns
+            r'((?:Rectal|Anal|Skin|Core|Punch|Incisional|Excisional)\s+Biopsy)',
+            # Histology/pathology
+            r'(HISTOLOGY[,\s]+TISSUE)',
+            # Imaging patterns
+            r'((?:CT|MRI|X-ray|Ultrasound|ECG|EKG)\s+[A-Za-z\s]{0,30})',
+            # Blood tests
+            r'((?:Blood|Urine|Stool)\s+(?:test|sample|culture|analysis))',
         ]
 
         for pattern in inv_patterns:
             for match in re.finditer(pattern, investigation_section, re.IGNORECASE):
                 inv_term = match.group(1).strip()
-                if inv_term.lower() in seen_texts or len(inv_term) < 3:
+                # Minimum length and already-seen check
+                if inv_term.lower() in seen_texts or len(inv_term) < 6:
+                    continue
+                # Must start with capital letter (proper clinical term)
+                if not inv_term[0].isupper():
+                    continue
+                # Must have at least 2 words or be a known single-word test
+                if ' ' not in inv_term and inv_term.lower() not in {'histology', 'pathology', 'biopsy', 'ultrasound'}:
                     continue
 
                 snomed_code, snomed_desc, conf = lookup_snomed(inv_term, client)
                 if snomed_code:
-                    entity = create_entity(
-                        text=inv_term, snomed_code=snomed_code, description=snomed_desc,
-                        confidence=max(conf, 0.70), category="INVESTIGATION",
-                        clinical_category="investigations", source="investigation_section"
-                    )
-                    investigations.append(entity)
-                    all_entities.append(entity)
-                    seen_texts.add(inv_term.lower())
-                    print(f"[EXTRACT] Investigation: '{inv_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+                    # Only accept valid investigation-related SNOMED codes
+                    desc_lower = snomed_desc.lower() if snomed_desc else ""
+                    if any(x in desc_lower for x in ['specimen', 'sample', 'biopsy', 'test', 'procedure',
+                                                      'imaging', 'scan', 'examination', 'measurement', 'tissue']):
+                        entity = create_entity(
+                            text=inv_term, snomed_code=snomed_code, description=snomed_desc,
+                            confidence=max(conf, 0.70), category="INVESTIGATION",
+                            clinical_category="investigations", source="investigation_section"
+                        )
+                        investigations.append(entity)
+                        all_entities.append(entity)
+                        seen_texts.add(inv_term.lower())
+                        print(f"[EXTRACT] Investigation: '{inv_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ── PROBLEMS EXTRACTOR ──
     # Extract from assessment/findings section
@@ -1351,6 +1377,14 @@ def run_comprehend_medical(text: str) -> dict:
 
             text_val = e.get("Text", "").strip()
             text_lower = text_val.lower()
+
+            # Skip very short text (OCR fragments like "ctum", "ctal")
+            if len(text_val) < 4:
+                continue
+            # Skip text that doesn't start with a letter
+            if not text_val[0].isalpha():
+                continue
+            # Skip common OCR garbage patterns
             if text_lower in _SNOMED_FALSE_POSITIVE_TERMS:
                 continue
             if code in _SNOMED_FALSE_POSITIVE_CODES:
@@ -1362,6 +1396,11 @@ def run_comprehend_medical(text: str) -> dict:
                 continue
             if desc_lower.endswith("structure") and "disorder" not in desc_lower:
                 continue
+            # Skip non-clinical substances (Cerium, Veal, etc.)
+            if "(substance)" in desc_lower and not any(x in desc_lower for x in ['drug', 'medication', 'product', 'agent']):
+                # Check if the text looks like a real drug name
+                if not any(x in text_lower for x in ['ol', 'ine', 'ide', 'ate', 'cin', 'pam', 'lol', 'pril']):
+                    continue
 
             score = float(top.get("Score", e.get("Score", 0)))
             if score < 0.50:  # More lenient for fallback
