@@ -935,239 +935,591 @@ def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> s
 
 
 def run_comprehend_medical(text: str) -> dict:
-    """Run SNOMED mapping via Comprehend Medical with 5-category classification.
+    """Section-aware SNOMED extraction pipeline for NHS discharge summaries.
 
-    Categories (as requested):
-    - problems: Symptoms, issues (e.g., neck pain, tummy irritation) with SNOMED
-    - treatments: Therapeutic procedures (e.g., Mental Health treatment, Chemo) with SNOMED
-    - medications: Drugs (e.g., Thyroxine, Aspirin) with SNOMED
-    - investigations: Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio) with SNOMED
-    - diagnoses: Confirmed conditions (e.g., ulcerative colitis) with SNOMED
+    Pipeline:
+    1. SECTION DETECTION - Identify document sections
+    2. SECTION-BASED EXTRACTION - Extract candidates from appropriate sections
+    3. SNOMED LOOKUP - Map extracted terms to SNOMED codes
+    4. VALIDATION - Validate and deduplicate
 
-    Primary path: InferSNOMEDCT on full document text.
-    Fallback path: detect_entities_v2 → per-term InferSNOMEDCT → top results.
+    Categories come from DOCUMENT STRUCTURE, not AWS Comprehend entity types.
+    AWS Comprehend is used ONLY for SNOMED code lookup.
     """
+    import re
+    import sys
+
     client = make_client("comprehendmedical")
 
     # Initialize 5 category buckets
     problems, treatments, medications, investigations, diagnoses = [], [], [], [], []
     all_entities = []
+    seen_texts = set()  # Prevent duplicate extractions
     seen_codes = set()
+    validation_warnings = []
+    negated_entities = []
+    used_fallback = False
+    top3_fallback = []
+    snomed_entities = []  # Raw AWS Comprehend entities (for fallback only)
+    temporal_stats = {"current": 0, "historical": 0, "resolved": 0, "suspected": 0, "chronic": 0, "acute": 0}
 
-    # ── Primary: InferSNOMEDCT for SNOMED codes ──
-    # AWS Comprehend Medical has a 5000 character limit for InferSNOMEDCT
-    try:
-        resp = client.infer_snomedct(Text=text[:5000])
-        snomed_entities = resp.get("Entities", [])
-    except Exception as e:
-        import sys
-        print(f"[WARN] InferSNOMEDCT failed: {e}", file=sys.stderr)
-        snomed_entities = []
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STEP 1: SECTION DETECTION
+    # Identify and extract content from specific document sections
+    # ═══════════════════════════════════════════════════════════════════════════════
 
-    for e in snomed_entities:
-        concepts = e.get("SNOMEDCTConcepts", [])
-        # Get the highest-scoring SNOMED concept
-        if concepts:
-            top = max(concepts, key=lambda c: c.get("Score", 0))
-        else:
-            continue
-        code = top.get("Code", "")
-        if not code or code in seen_codes:
-            continue
+    def extract_section(text: str, headers: list, stop_headers: list = None) -> str:
+        """Extract content between a section header and the next section."""
+        text_lower = text.lower()
+        stop_headers = stop_headers or []
 
-        # FALSE POSITIVE FILTERING - remove hallucinated/anatomy codes
-        text_val = e.get("Text", "").strip()
-        text_lower = text_val.lower()
-        if text_lower in _SNOMED_FALSE_POSITIVE_TERMS:
-            continue
-        if code in _SNOMED_FALSE_POSITIVE_CODES:
-            continue
-        # Filter anatomy-only descriptions (structure, body part without pathology)
-        description = top.get("Description", "")
-        desc_lower = description.lower()
-        if "(body structure)" in desc_lower or "structure of" in desc_lower:
-            continue
-        if desc_lower.endswith("structure") and "disorder" not in desc_lower:
-            continue
+        for header in headers:
+            # Find header position
+            pattern = rf'(?:^|\n)\s*{re.escape(header.lower())}[:\s]*(?:\n|$)'
+            match = re.search(pattern, text_lower, re.IGNORECASE | re.MULTILINE)
+            if match:
+                start = match.end()
+                # Find end - next section header or end of text
+                end = len(text)
+                for stop in stop_headers + ['diagnosis', 'medication', 'procedure', 'investigation',
+                                            'assessment', 'plan', 'follow', 'advice', 'action']:
+                    stop_pattern = rf'\n\s*{re.escape(stop)}[:\s]*(?:\n|$)'
+                    stop_match = re.search(stop_pattern, text_lower[start:], re.IGNORECASE)
+                    if stop_match:
+                        end = min(end, start + stop_match.start())
+                return text[start:end].strip()
+        return ""
 
-        # STRICT: Accept SNOMED concepts only when confidence >= 0.60
-        score = float(top.get("Score", e.get("Score", 0)))
-        if score < 0.60:
-            continue
+    # Section header patterns for each category
+    DIAGNOSIS_HEADERS = [
+        'diagnosis', 'diagnoses', 'post-op diagnosis', 'post-operative diagnosis',
+        'pre-op diagnosis', 'pre-operative diagnosis', 'final diagnosis',
+        'primary diagnosis', 'principal diagnosis', 'main diagnosis',
+        'secondary diagnosis', 'secondary diagnoses', 'clinical diagnosis',
+        'working diagnosis', 'confirmed diagnosis', 'discharge diagnosis',
+    ]
 
-        # Specimens go to investigations (not filtered out)
-        # But skip specimen semantic type for general entities
-        if "(specimen)" in desc_lower and "tissue" not in text_lower and "biopsy" not in text_lower:
-            continue
+    MEDICATION_HEADERS = [
+        'medication', 'medications', 'your medication', 'your medications',
+        'discharge medication', 'discharge medications', 'tta', 'tto',
+        'take home medication', 'current medication', 'current medications',
+        'regular medication', 'regular medications', 'to take away',
+        'medication list', 'drug', 'drugs', 'prescription',
+        'continue medication', 'continue medications', 'prescribed',
+    ]
 
-        seen_codes.add(code)
+    TREATMENT_HEADERS = [
+        'procedure', 'procedures', 'procedure performed', 'operation',
+        'operation performed', 'operative procedure', 'surgical procedure',
+        'treatment', 'treatment given', 'therapy', 'intervention',
+        'procedure information', 'operative findings',
+    ]
 
-        traits = e.get("Traits", [])
+    INVESTIGATION_HEADERS = [
+        'investigation', 'investigations', 'specimen', 'specimens',
+        'histology', 'pathology', 'laboratory', 'lab results',
+        'imaging', 'radiology', 'x-ray', 'scan', 'mri', 'ct',
+        'blood test', 'blood tests', 'test results', 'results',
+    ]
 
-        entry = {
-            "text":        text_val,
-            "category":    e.get("Category", ""),
-            "snomed_code": code,
+    PROBLEMS_HEADERS = [
+        'assessment', 'clinical findings', 'findings', 'impression',
+        'presenting complaint', 'chief complaint', 'history of present illness',
+        'hpi', 'symptoms', 'signs', 'clinical impression',
+        'reason for attendance', 'reason for admission', 'problems',
+    ]
+
+    # Extract section content
+    diagnosis_section = extract_section(text, DIAGNOSIS_HEADERS)
+    medication_section = extract_section(text, MEDICATION_HEADERS)
+    treatment_section = extract_section(text, TREATMENT_HEADERS)
+    investigation_section = extract_section(text, INVESTIGATION_HEADERS)
+    problems_section = extract_section(text, PROBLEMS_HEADERS)
+
+    print(f"[SECTION] Diagnosis section: {len(diagnosis_section)} chars", file=sys.stderr)
+    print(f"[SECTION] Medication section: {len(medication_section)} chars", file=sys.stderr)
+    print(f"[SECTION] Treatment section: {len(treatment_section)} chars", file=sys.stderr)
+    print(f"[SECTION] Investigation section: {len(investigation_section)} chars", file=sys.stderr)
+    print(f"[SECTION] Problems section: {len(problems_section)} chars", file=sys.stderr)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STEP 2: SECTION-BASED EXTRACTION
+    # Extract candidates from their appropriate sections
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    def lookup_snomed(term: str, client) -> tuple:
+        """Lookup SNOMED code for a term using AWS Comprehend Medical."""
+        if not term or len(term) < 2:
+            return None, None, 0.0
+        try:
+            resp = client.infer_snomedct(Text=term[:500])
+            entities = resp.get("Entities", [])
+            if entities:
+                concepts = entities[0].get("SNOMEDCTConcepts", [])
+                if concepts:
+                    top = max(concepts, key=lambda c: c.get("Score", 0))
+                    return top.get("Code"), top.get("Description"), top.get("Score", 0)
+        except Exception:
+            pass
+        return None, None, 0.0
+
+    def create_entity(text: str, snomed_code: str, description: str, confidence: float,
+                      category: str, clinical_category: str, source: str, icd_code: str = None) -> dict:
+        """Create a standardized entity dict."""
+        return {
+            "text": text,
+            "category": category,
+            "snomed_code": snomed_code,
             "description": description,
-            "confidence":  round(score, 3),
-            "entity_id":   str(uuid.uuid4())[:8],
-            "source":      "comprehend_snomed",
-            "start_pos":   e.get("BeginOffset", 0),  # Position from AWS Comprehend
-            "end_pos":     e.get("EndOffset", len(text_val)),
+            "confidence": round(confidence, 3),
+            "entity_id": str(uuid.uuid4())[:8],
+            "source": source,
+            "clinical_category": clinical_category,
+            "icd_code": icd_code,
         }
 
-        # Categorize into 5 buckets
-        bucket = _categorize_snomed_entity(e, description, traits)
-        entry["clinical_category"] = bucket
+    # ── DIAGNOSIS EXTRACTOR ──
+    # Extract from diagnosis section, use ICD-to-SNOMED mapping first
+    ICD_TO_SNOMED = {
+        # Infectious diseases
+        'A09': ('25374005', 'Gastroenteritis'), 'A41': ('91302008', 'Sepsis'),
+        'A41.9': ('91302008', 'Sepsis'), 'B34': ('34014006', 'Viral infection'),
+        # Neoplasms
+        'C34': ('254637007', 'Lung cancer'), 'C50': ('254837009', 'Breast cancer'),
+        'C61': ('399068003', 'Prostate cancer'), 'C18': ('363406005', 'Colon cancer'),
+        'D50': ('87522002', 'Iron deficiency anemia'), 'D64': ('271737000', 'Anemia'),
+        # Endocrine/Metabolic
+        'E03': ('40930008', 'Hypothyroidism'), 'E05': ('34486009', 'Hyperthyroidism'),
+        'E10': ('46635009', 'Type 1 diabetes'), 'E11': ('44054006', 'Type 2 diabetes'),
+        'E66': ('414916001', 'Obesity'), 'E78': ('13644009', 'Hyperlipidemia'),
+        'E86': ('34095006', 'Dehydration'), 'E87.1': ('89627008', 'Hyponatremia'),
+        # Mental health
+        'F00': ('26929004', 'Alzheimer disease'), 'F03': ('52448006', 'Dementia'),
+        'F10': ('7200002', 'Alcohol dependence'), 'F32': ('35489007', 'Depression'),
+        'F41': ('197480006', 'Anxiety disorder'),
+        # Nervous system
+        'G20': ('49049000', 'Parkinson disease'), 'G40': ('84757009', 'Epilepsy'),
+        'G43': ('37796009', 'Migraine'), 'G45': ('266257000', 'TIA'),
+        # Cardiovascular
+        'I10': ('38341003', 'Hypertension'), 'I20': ('194828000', 'Angina'),
+        'I21': ('22298006', 'Myocardial infarction'), 'I25': ('53741008', 'Coronary heart disease'),
+        'I26': ('59282003', 'Pulmonary embolism'), 'I48': ('49436004', 'Atrial fibrillation'),
+        'I50': ('84114007', 'Heart failure'), 'I63': ('422504002', 'Ischemic stroke'),
+        'I64': ('230690007', 'Stroke'), 'I80': ('128053003', 'Deep vein thrombosis'),
+        # Respiratory
+        'J06': ('54150009', 'Upper respiratory infection'), 'J18': ('233604007', 'Pneumonia'),
+        'J44': ('13645005', 'COPD'), 'J45': ('195967001', 'Asthma'),
+        'J96': ('65710008', 'Respiratory failure'),
+        # Digestive
+        'K21': ('235595009', 'GORD'), 'K25': ('13200003', 'Peptic ulcer'),
+        'K35': ('74400008', 'Appendicitis'), 'K40': ('396232000', 'Inguinal hernia'),
+        'K50': ('34000006', 'Crohn disease'), 'K51': ('64766004', 'Ulcerative colitis'),
+        'K57': ('397881000', 'Diverticular disease'), 'K64': ('70153002', 'Hemorrhoids'),
+        'K64.9': ('70153002', 'Hemorrhoids'), 'K80': ('235919008', 'Gallstones'),
+        'K85': ('197456007', 'Acute pancreatitis'),
+        # Musculoskeletal
+        'M05': ('69896004', 'Rheumatoid arthritis'), 'M10': ('90560007', 'Gout'),
+        'M17': ('239873007', 'Knee osteoarthritis'), 'M54': ('161891005', 'Back pain'),
+        'M81': ('64859006', 'Osteoporosis'),
+        # Genitourinary
+        'N17': ('14669001', 'Acute kidney injury'), 'N18': ('709044004', 'Chronic kidney disease'),
+        'N39': ('68566005', 'Urinary tract infection'), 'N40': ('266569009', 'BPH'),
+        # Symptoms
+        'R00': ('80313002', 'Palpitations'), 'R05': ('49727002', 'Cough'),
+        'R06': ('267036007', 'Dyspnea'), 'R07': ('29857009', 'Chest pain'),
+        'R10': ('21522001', 'Abdominal pain'), 'R11': ('422400008', 'Vomiting'),
+        'R50': ('386661006', 'Fever'), 'R55': ('271594007', 'Syncope'),
+        # Injuries
+        'S06': ('127295002', 'Traumatic brain injury'), 'S72': ('414564002', 'Hip fracture'),
+    }
 
-        if bucket == "problems":
-            problems.append(entry)
-        elif bucket == "treatments":
-            treatments.append(entry)
-        elif bucket == "medications":
-            medications.append(entry)
-        elif bucket == "investigations":
-            investigations.append(entry)
-        elif bucket == "diagnoses":
-            diagnoses.append(entry)
+    # Extract diagnoses from diagnosis section
+    if diagnosis_section:
+        # Pattern: "* Condition [ICD]" or "- Condition [ICD]" or "1. Condition [ICD]"
+        diag_patterns = [
+            r'[\*\-•]\s*([A-Za-z][^\[\n]{2,60})\s*\[([A-Z]\d+\.?\d*)\]',
+            r'\d+\.\s*([A-Za-z][^\[\n]{2,60})\s*\[([A-Z]\d+\.?\d*)\]',
+            r'([A-Za-z][^\(\n]{3,60})\s*\((?:ICD-?10)?[:\s]*([A-Z]\d+\.?\d*)\)',
+            r'([A-Za-z][^\[\n\(]{3,60})\s*\[([A-Z]\d+\.?\d*)\]',
+        ]
+        for pattern in diag_patterns:
+            for match in re.finditer(pattern, diagnosis_section, re.IGNORECASE):
+                diag_term = match.group(1).strip()
+                icd_code = match.group(2).strip() if match.lastindex >= 2 else None
 
-        all_entities.append(entry)
+                if diag_term.lower() in seen_texts or len(diag_term) < 3:
+                    continue
 
-    # ── Secondary: detect_entities_v2 for medications ──
-    try:
-        resp_v2 = client.detect_entities_v2(Text=text[:10000])
-        v2_entities = resp_v2.get("Entities", [])
-    except Exception:
-        v2_entities = []
+                # Get SNOMED from ICD mapping first
+                snomed_code, snomed_desc = None, None
+                if icd_code:
+                    if icd_code in ICD_TO_SNOMED:
+                        snomed_code, snomed_desc = ICD_TO_SNOMED[icd_code]
+                    else:
+                        # Try prefix match
+                        icd_prefix = icd_code.split('.')[0]
+                        if icd_prefix in ICD_TO_SNOMED:
+                            snomed_code, snomed_desc = ICD_TO_SNOMED[icd_prefix]
 
-    # Track medication names already found to avoid duplicates
-    seen_med_names = {m.get("text", "").lower() for m in medications}
+                # Fallback to AWS Comprehend SNOMED lookup
+                if not snomed_code:
+                    snomed_code, snomed_desc, conf = lookup_snomed(diag_term, client)
 
-    for e in v2_entities:
-        entity_type = e.get("Type", "").upper()
-        category = e.get("Category", "").upper()
-        text_val = e.get("Text", "").strip()
+                if snomed_code:
+                    entity = create_entity(
+                        text=diag_term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.90 if icd_code else 0.75,
+                        category="DIAGNOSIS", clinical_category="diagnoses",
+                        source="diagnosis_section", icd_code=icd_code
+                    )
+                    diagnoses.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(diag_term.lower())
+                    print(f"[EXTRACT] Diagnosis: '{diag_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-        if not text_val or len(text_val) < 2:
-            continue
-
-        # Only process medication entities not already captured
-        if category == "MEDICATION" or entity_type in ("GENERIC_NAME", "BRAND_NAME"):
-            # Skip if already have this medication
-            if text_val.lower() in seen_med_names:
+        # Also extract plain text diagnoses (no ICD code)
+        plain_pattern = r'(?:^|\n)\s*[\*\-•]\s*([A-Za-z][^\n\[\(]{3,50})\s*(?:\n|$)'
+        for match in re.finditer(plain_pattern, diagnosis_section):
+            diag_term = match.group(1).strip()
+            if diag_term.lower() in seen_texts or len(diag_term) < 4:
                 continue
-            seen_med_names.add(text_val.lower())
+            # Skip obvious false positives
+            skip_words = {'patient', 'please', 'follow', 'review', 'continue', 'discharge', 'see', 'contact'}
+            if diag_term.lower().split()[0] in skip_words:
+                continue
 
-            # Try to get SNOMED code for this medication
-            snomed_code = None
-            snomed_desc = ""
-            snomed_conf = 0.5
+            snomed_code, snomed_desc, conf = lookup_snomed(diag_term, client)
+            if snomed_code and conf >= 0.5:
+                entity = create_entity(
+                    text=diag_term, snomed_code=snomed_code, description=snomed_desc,
+                    confidence=conf, category="DIAGNOSIS", clinical_category="diagnoses",
+                    source="diagnosis_section"
+                )
+                diagnoses.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(diag_term.lower())
 
-            try:
-                # First try exact medication name
-                med_resp = client.infer_snomedct(Text=text_val)
-                med_entities = med_resp.get("Entities", [])
-                if med_entities:
-                    med_concepts = med_entities[0].get("SNOMEDCTConcepts", [])
-                    if med_concepts:
-                        # Find product/substance concept (not procedure)
-                        for mc in sorted(med_concepts, key=lambda c: c.get("Score", 0), reverse=True):
-                            desc = mc.get("Description", "").lower()
-                            if "(product)" in desc or "(substance)" in desc or "medication" in desc:
-                                snomed_code = mc.get("Code", "")
-                                snomed_desc = mc.get("Description", "")
-                                snomed_conf = mc.get("Score", 0.5)
-                                break
-                        # Fallback to top concept if no product/substance found
-                        if not snomed_code and med_concepts:
-                            top_med = max(med_concepts, key=lambda c: c.get("Score", 0))
-                            snomed_code = top_med.get("Code", "")
-                            snomed_desc = top_med.get("Description", "")
-                            snomed_conf = top_med.get("Score", 0.5)
-            except Exception:
-                pass
+    # ── MEDICATION EXTRACTOR ──
+    # Extract from medication section
+    if medication_section:
+        # Common medication patterns
+        med_patterns = [
+            # "Paracetamol 500mg" or "Paracetamol 500 mg"
+            r'([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
+            # "Paracetamol tablets"
+            r'([A-Za-z][A-Za-z\-]+)\s+(?:tablets?|capsules?|injection|solution|cream|ointment)\b',
+            # Bullet point medications "- Paracetamol"
+            r'[\*\-•]\s*([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s*(?:\d|$|\n)',
+            # Numbered list "1. Paracetamol"
+            r'\d+\.\s*([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s*(?:\d|$|\n)',
+        ]
 
-            # STRICT: Only add medication if confidence >= 0.60
-            if snomed_code and snomed_code not in seen_codes and snomed_conf >= 0.60:
-                seen_codes.add(snomed_code)
-                entry = {
-                    "text":        text_val,
-                    "category":    "MEDICATION",
-                    "snomed_code": snomed_code,
-                    "description": snomed_desc,
-                    "confidence":  round(float(snomed_conf), 3),
-                    "entity_id":   str(uuid.uuid4())[:8],
-                    "source":      "comprehend_medication",
-                    "clinical_category": "medications",
-                    "start_pos":   e.get("BeginOffset", 0),
-                    "end_pos":     e.get("EndOffset", len(text_val)),
-                }
-                medications.append(entry)
-                all_entities.append(entry)
-            # NOTE: Removed "no SNOMED code" fallback - per rules, every entity must have SNOMED
+        for pattern in med_patterns:
+            for match in re.finditer(pattern, medication_section, re.IGNORECASE):
+                med_term = match.group(1).strip()
+                if med_term.lower() in seen_texts or len(med_term) < 3:
+                    continue
+                # Skip non-medication words
+                skip_words = {'continue', 'take', 'stop', 'start', 'increase', 'decrease', 'review',
+                              'patient', 'please', 'with', 'food', 'water', 'daily', 'twice', 'once'}
+                if med_term.lower() in skip_words:
+                    continue
 
-        # Also capture TEST_NAME entities as investigations
-        elif category == "TEST_TREATMENT_PROCEDURE" and entity_type == "TEST_NAME":
-            try:
-                test_resp = client.infer_snomedct(Text=text_val)
-                test_entities = test_resp.get("Entities", [])
-                if test_entities:
-                    test_concepts = test_entities[0].get("SNOMEDCTConcepts", [])
-                    if test_concepts:
-                        top_test = max(test_concepts, key=lambda c: c.get("Score", 0))
-                        code = top_test.get("Code", "")
-                        test_conf = float(top_test.get("Score", 0))
-                        # STRICT: Only accept if confidence >= 0.60
-                        if code and code not in seen_codes and test_conf >= 0.60:
-                            seen_codes.add(code)
-                            entry = {
-                                "text":        text_val,
-                                "category":    "TEST_NAME",
-                                "snomed_code": code,
-                                "description": top_test.get("Description", ""),
-                                "confidence":  round(test_conf, 3),
-                                "entity_id":   str(uuid.uuid4())[:8],
-                                "source":      "comprehend_investigation",
-                                "clinical_category": "investigations",
-                            }
-                            investigations.append(entry)
-                            all_entities.append(entry)
-            except Exception:
-                pass
+                snomed_code, snomed_desc, conf = lookup_snomed(med_term, client)
+                if snomed_code:
+                    entity = create_entity(
+                        text=med_term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=max(conf, 0.70), category="MEDICATION",
+                        clinical_category="medications", source="medication_section"
+                    )
+                    medications.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(med_term.lower())
+                    print(f"[EXTRACT] Medication: '{med_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-    # ── Fallback: term-by-term extraction when nothing found ──
+    # ── TREATMENT EXTRACTOR ──
+    # Extract from treatment/procedure section
+    if treatment_section:
+        # Look for procedure descriptions
+        proc_patterns = [
+            r'[\*\-•]\s*([A-Za-z][^\n]{5,80})',
+            r'\d+\.\s*([A-Za-z][^\n]{5,80})',
+            r'(?:performed|underwent|had)\s+(?:a\s+)?([A-Za-z][^\.\n]{5,60})',
+        ]
+
+        for pattern in proc_patterns:
+            for match in re.finditer(pattern, treatment_section, re.IGNORECASE):
+                proc_term = match.group(1).strip()
+                if proc_term.lower() in seen_texts or len(proc_term) < 5:
+                    continue
+
+                snomed_code, snomed_desc, conf = lookup_snomed(proc_term, client)
+                if snomed_code:
+                    entity = create_entity(
+                        text=proc_term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=max(conf, 0.70), category="TREATMENT",
+                        clinical_category="treatments", source="treatment_section"
+                    )
+                    treatments.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(proc_term.lower())
+                    print(f"[EXTRACT] Treatment: '{proc_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # ── INVESTIGATION EXTRACTOR ──
+    # Extract from investigation/specimen section
+    if investigation_section:
+        inv_patterns = [
+            r'[\*\-•]\s*([A-Za-z][^\n]{3,60})',
+            r'\d+\.\s*([A-Za-z][^\n]{3,60})',
+            r'([A-Za-z]+\s+(?:specimen|tissue|biopsy|sample))',
+            r'((?:CT|MRI|X-ray|Ultrasound|ECG|EKG|Blood test)[^\n]{0,40})',
+        ]
+
+        for pattern in inv_patterns:
+            for match in re.finditer(pattern, investigation_section, re.IGNORECASE):
+                inv_term = match.group(1).strip()
+                if inv_term.lower() in seen_texts or len(inv_term) < 3:
+                    continue
+
+                snomed_code, snomed_desc, conf = lookup_snomed(inv_term, client)
+                if snomed_code:
+                    entity = create_entity(
+                        text=inv_term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=max(conf, 0.70), category="INVESTIGATION",
+                        clinical_category="investigations", source="investigation_section"
+                    )
+                    investigations.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(inv_term.lower())
+                    print(f"[EXTRACT] Investigation: '{inv_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # ── PROBLEMS EXTRACTOR ──
+    # Extract from assessment/findings section
+    if problems_section:
+        prob_patterns = [
+            r'[\*\-•]\s*([A-Za-z][^\n]{3,60})',
+            r'(?:complaining of|presented with|reports?)\s+([A-Za-z][^\.\n]{3,50})',
+        ]
+
+        for pattern in prob_patterns:
+            for match in re.finditer(pattern, problems_section, re.IGNORECASE):
+                prob_term = match.group(1).strip()
+                if prob_term.lower() in seen_texts or len(prob_term) < 3:
+                    continue
+
+                snomed_code, snomed_desc, conf = lookup_snomed(prob_term, client)
+                if snomed_code:
+                    entity = create_entity(
+                        text=prob_term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=max(conf, 0.65), category="PROBLEM",
+                        clinical_category="problems", source="problems_section"
+                    )
+                    problems.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(prob_term.lower())
+                    print(f"[EXTRACT] Problem: '{prob_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STEP 3: FALLBACK - Use AWS Comprehend on full text if sections yielded nothing
+    # Only for documents without clear section structure
+    # ═══════════════════════════════════════════════════════════════════════════════
+
     used_fallback = False
-    top3_fallback: list = []
+    top3_fallback = []
+
     if not all_entities:
-        top3_fallback = _snomed_term_fallback(text, client)
-        used_fallback = bool(top3_fallback)
-        for entry in top3_fallback:
-            # STRICT: Only accept fallback entries with confidence >= 0.60
-            fallback_conf = entry.get("confidence", 0)
-            if fallback_conf < 0.60:
+        print("[FALLBACK] No section-based extractions, using AWS Comprehend on full text", file=sys.stderr)
+        used_fallback = True
+
+        # ── Primary: InferSNOMEDCT for SNOMED codes ──
+        # AWS Comprehend Medical has a 5000 character limit for InferSNOMEDCT
+        try:
+            resp = client.infer_snomedct(Text=text[:5000])
+            snomed_entities = resp.get("Entities", [])
+        except Exception as e:
+            print(f"[WARN] InferSNOMEDCT failed: {e}", file=sys.stderr)
+            snomed_entities = []
+
+        for e in snomed_entities:
+            concepts = e.get("SNOMEDCTConcepts", [])
+            if not concepts:
+                continue
+            top = max(concepts, key=lambda c: c.get("Score", 0))
+            code = top.get("Code", "")
+            if not code or code in seen_codes:
                 continue
 
-            desc = entry.get("description", "")
-            cat = entry.get("category", "").upper()
+            text_val = e.get("Text", "").strip()
+            text_lower = text_val.lower()
+            if text_lower in _SNOMED_FALSE_POSITIVE_TERMS:
+                continue
+            if code in _SNOMED_FALSE_POSITIVE_CODES:
+                continue
 
-            # Classify fallback entries
-            if "MEDICATION" in cat or "(substance)" in desc.lower() or "(product)" in desc.lower():
-                entry["clinical_category"] = "medications"
-                medications.append(entry)
-            elif "(procedure)" in desc.lower():
-                if any(x in desc.lower() for x in ["scan", "imaging", "test", "examination"]):
-                    entry["clinical_category"] = "investigations"
-                    investigations.append(entry)
-                else:
-                    entry["clinical_category"] = "treatments"
-                    treatments.append(entry)
-            elif "DIAGNOSIS" in cat or "(disorder)" in desc.lower():
-                entry["clinical_category"] = "diagnoses"
-                diagnoses.append(entry)
-            else:
-                entry["clinical_category"] = "problems"
+            description = top.get("Description", "")
+            desc_lower = description.lower()
+            if "(body structure)" in desc_lower or "structure of" in desc_lower:
+                continue
+            if desc_lower.endswith("structure") and "disorder" not in desc_lower:
+                continue
+
+            score = float(top.get("Score", e.get("Score", 0)))
+            if score < 0.50:  # More lenient for fallback
+                continue
+
+            if "(specimen)" in desc_lower and "tissue" not in text_lower and "biopsy" not in text_lower:
+                continue
+
+            seen_codes.add(code)
+            traits = e.get("Traits", [])
+
+            entry = {
+                "text": text_val,
+                "category": e.get("Category", ""),
+                "snomed_code": code,
+                "description": description,
+                "confidence": round(score, 3),
+                "entity_id": str(uuid.uuid4())[:8],
+                "source": "comprehend_fallback",
+                "start_pos": e.get("BeginOffset", 0),
+                "end_pos": e.get("EndOffset", len(text_val)),
+            }
+
+            # Use Comprehend category only as fallback
+            bucket = _categorize_snomed_entity(e, description, traits)
+            entry["clinical_category"] = bucket
+
+            if bucket == "problems":
                 problems.append(entry)
+            elif bucket == "treatments":
+                treatments.append(entry)
+            elif bucket == "medications":
+                medications.append(entry)
+            elif bucket == "investigations":
+                investigations.append(entry)
+            elif bucket == "diagnoses":
+                diagnoses.append(entry)
+
             all_entities.append(entry)
+
+        # ── Secondary: detect_entities_v2 for medications (fallback only) ──
+        try:
+            resp_v2 = client.detect_entities_v2(Text=text[:10000])
+            v2_entities = resp_v2.get("Entities", [])
+        except Exception:
+            v2_entities = []
+
+        seen_med_names = {m.get("text", "").lower() for m in medications}
+
+        for e in v2_entities:
+            entity_type = e.get("Type", "").upper()
+            category = e.get("Category", "").upper()
+            text_val = e.get("Text", "").strip()
+
+            if not text_val or len(text_val) < 2:
+                continue
+
+            # Only process medication entities not already captured
+            if category == "MEDICATION" or entity_type in ("GENERIC_NAME", "BRAND_NAME"):
+                if text_val.lower() in seen_med_names:
+                    continue
+                seen_med_names.add(text_val.lower())
+
+                snomed_code = None
+                snomed_desc = ""
+                snomed_conf = 0.5
+
+                try:
+                    med_resp = client.infer_snomedct(Text=text_val)
+                    med_entities = med_resp.get("Entities", [])
+                    if med_entities:
+                        med_concepts = med_entities[0].get("SNOMEDCTConcepts", [])
+                        if med_concepts:
+                            for mc in sorted(med_concepts, key=lambda c: c.get("Score", 0), reverse=True):
+                                desc = mc.get("Description", "").lower()
+                                if "(product)" in desc or "(substance)" in desc or "medication" in desc:
+                                    snomed_code = mc.get("Code", "")
+                                    snomed_desc = mc.get("Description", "")
+                                    snomed_conf = mc.get("Score", 0.5)
+                                    break
+                            if not snomed_code and med_concepts:
+                                top_med = max(med_concepts, key=lambda c: c.get("Score", 0))
+                                snomed_code = top_med.get("Code", "")
+                                snomed_desc = top_med.get("Description", "")
+                                snomed_conf = top_med.get("Score", 0.5)
+                except Exception:
+                    pass
+
+                if snomed_code and snomed_code not in seen_codes and snomed_conf >= 0.50:
+                    seen_codes.add(snomed_code)
+                    entry = {
+                        "text": text_val,
+                        "category": "MEDICATION",
+                        "snomed_code": snomed_code,
+                        "description": snomed_desc,
+                        "confidence": round(float(snomed_conf), 3),
+                        "entity_id": str(uuid.uuid4())[:8],
+                        "source": "comprehend_fallback_medication",
+                        "clinical_category": "medications",
+                    }
+                    medications.append(entry)
+                    all_entities.append(entry)
+
+            elif category == "TEST_TREATMENT_PROCEDURE" and entity_type == "TEST_NAME":
+                try:
+                    test_resp = client.infer_snomedct(Text=text_val)
+                    test_entities = test_resp.get("Entities", [])
+                    if test_entities:
+                        test_concepts = test_entities[0].get("SNOMEDCTConcepts", [])
+                        if test_concepts:
+                            top_test = max(test_concepts, key=lambda c: c.get("Score", 0))
+                            code = top_test.get("Code", "")
+                            test_conf = float(top_test.get("Score", 0))
+                            if code and code not in seen_codes and test_conf >= 0.50:
+                                seen_codes.add(code)
+                                entry = {
+                                    "text": text_val,
+                                    "category": "TEST_NAME",
+                                    "snomed_code": code,
+                                    "description": top_test.get("Description", ""),
+                                    "confidence": round(test_conf, 3),
+                                    "entity_id": str(uuid.uuid4())[:8],
+                                    "source": "comprehend_fallback_investigation",
+                                    "clinical_category": "investigations",
+                                }
+                                investigations.append(entry)
+                                all_entities.append(entry)
+                except Exception:
+                    pass
+
+        # Term-by-term fallback if still nothing
+        if not all_entities:
+            top3_fallback = _snomed_term_fallback(text, client)
+            for entry in top3_fallback:
+                fallback_conf = entry.get("confidence", 0)
+                if fallback_conf < 0.50:
+                    continue
+
+                desc = entry.get("description", "")
+                cat = entry.get("category", "").upper()
+
+                if "MEDICATION" in cat or "(substance)" in desc.lower() or "(product)" in desc.lower():
+                    entry["clinical_category"] = "medications"
+                    medications.append(entry)
+                elif "(procedure)" in desc.lower():
+                    if any(x in desc.lower() for x in ["scan", "imaging", "test", "examination"]):
+                        entry["clinical_category"] = "investigations"
+                        investigations.append(entry)
+                    else:
+                        entry["clinical_category"] = "treatments"
+                        treatments.append(entry)
+                elif "DIAGNOSIS" in cat or "(disorder)" in desc.lower():
+                    entry["clinical_category"] = "diagnoses"
+                    diagnoses.append(entry)
+                else:
+                    entry["clinical_category"] = "problems"
+                    problems.append(entry)
+                all_entities.append(entry)
 
     # ── Clinical Engine Validation (when available) ──────────────────────────────
     # Apply context-aware validation to remove false positives
@@ -1506,482 +1858,12 @@ def run_comprehend_medical(text: str) -> dict:
             print(f"[WARN] Negation detection failed: {e}", file=sys.stderr)
             validation_warnings.append(f"Negation detection error: {e}")
 
-    # ── Extract Diagnoses from explicit "Diagnosis" section ────────────────────────
-    # Documents often have "Diagnosis" or "Post-op Diagnosis" sections that Comprehend misses
-    try:
-        import re as _re_diag
-        import sys
+    # NOTE: Diagnosis section extraction is now handled in STEP 2 (section-based extraction)
+    # at the beginning of this function. The code below has been removed to avoid duplication.
 
-        # ICD-10 to SNOMED mapping for common conditions (200+ codes)
-        ICD_TO_SNOMED = {
-            # ══ Infectious diseases (A00-B99) ══
-            'A09': ('25374005', 'Gastroenteritis (disorder)'),
-            'A41': ('91302008', 'Sepsis (disorder)'),
-            'A41.9': ('91302008', 'Sepsis (disorder)'),
-            'A49': ('40733004', 'Bacterial infection (disorder)'),
-            'B34': ('34014006', 'Viral infection (disorder)'),
-            'B34.9': ('34014006', 'Viral infection (disorder)'),
-
-            # ══ Neoplasms (C00-D49) ══
-            'C34': ('254637007', 'Lung cancer (disorder)'),
-            'C50': ('254837009', 'Breast cancer (disorder)'),
-            'C61': ('399068003', 'Prostate cancer (disorder)'),
-            'C18': ('363406005', 'Colon cancer (disorder)'),
-            'C20': ('363351006', 'Rectal cancer (disorder)'),
-            'C64': ('93849006', 'Kidney cancer (disorder)'),
-            'C67': ('399326009', 'Bladder cancer (disorder)'),
-            'D50': ('87522002', 'Iron deficiency anemia (disorder)'),
-            'D50.9': ('87522002', 'Iron deficiency anemia (disorder)'),
-            'D64': ('271737000', 'Anemia (disorder)'),
-            'D64.9': ('271737000', 'Anemia (disorder)'),
-
-            # ══ Endocrine/Metabolic (E00-E89) ══
-            'E03': ('40930008', 'Hypothyroidism (disorder)'),
-            'E03.9': ('40930008', 'Hypothyroidism (disorder)'),
-            'E05': ('34486009', 'Hyperthyroidism (disorder)'),
-            'E10': ('46635009', 'Type 1 diabetes mellitus (disorder)'),
-            'E10.9': ('46635009', 'Type 1 diabetes mellitus (disorder)'),
-            'E11': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
-            'E11.9': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
-            'E11.65': ('127013003', 'Diabetic ketoacidosis (disorder)'),
-            'E13': ('73211009', 'Diabetes mellitus (disorder)'),
-            'E66': ('414916001', 'Obesity (disorder)'),
-            'E66.9': ('414916001', 'Obesity (disorder)'),
-            'E78': ('13644009', 'Hyperlipidemia (disorder)'),
-            'E78.0': ('13644009', 'Hypercholesterolemia (disorder)'),
-            'E78.5': ('13644009', 'Hyperlipidemia (disorder)'),
-            'E83.5': ('66999008', 'Hypercalcemia (disorder)'),
-            'E86': ('34095006', 'Dehydration (disorder)'),
-            'E87': ('237840007', 'Electrolyte imbalance (disorder)'),
-            'E87.1': ('89627008', 'Hyponatremia (disorder)'),
-            'E87.6': ('43339004', 'Hypokalemia (disorder)'),
-
-            # ══ Mental/Behavioral (F00-F99) ══
-            'F00': ('26929004', 'Alzheimer disease (disorder)'),
-            'F01': ('429998004', 'Vascular dementia (disorder)'),
-            'F03': ('52448006', 'Dementia (disorder)'),
-            'F10': ('7200002', 'Alcohol dependence (disorder)'),
-            'F10.2': ('7200002', 'Alcohol dependence (disorder)'),
-            'F11': ('75544000', 'Opioid dependence (disorder)'),
-            'F17': ('56294008', 'Tobacco dependence (disorder)'),
-            'F20': ('58214004', 'Schizophrenia (disorder)'),
-            'F31': ('13746004', 'Bipolar disorder (disorder)'),
-            'F32': ('35489007', 'Depressive disorder (disorder)'),
-            'F32.9': ('35489007', 'Depressive disorder (disorder)'),
-            'F33': ('66344007', 'Recurrent depressive disorder (disorder)'),
-            'F41': ('197480006', 'Anxiety disorder (disorder)'),
-            'F41.0': ('371631005', 'Panic disorder (disorder)'),
-            'F41.1': ('21897009', 'Generalized anxiety disorder (disorder)'),
-            'F41.9': ('197480006', 'Anxiety disorder (disorder)'),
-            'F43': ('17226007', 'Adjustment disorder (disorder)'),
-            'F43.1': ('47505003', 'Post-traumatic stress disorder (disorder)'),
-
-            # ══ Nervous system (G00-G99) ══
-            'G20': ('49049000', 'Parkinson disease (disorder)'),
-            'G30': ('26929004', 'Alzheimer disease (disorder)'),
-            'G35': ('24700007', 'Multiple sclerosis (disorder)'),
-            'G40': ('84757009', 'Epilepsy (disorder)'),
-            'G40.9': ('84757009', 'Epilepsy (disorder)'),
-            'G43': ('37796009', 'Migraine (disorder)'),
-            'G43.9': ('37796009', 'Migraine (disorder)'),
-            'G44': ('25064002', 'Headache (finding)'),
-            'G45': ('266257000', 'Transient ischemic attack (disorder)'),
-            'G47': ('39898005', 'Sleep disorder (disorder)'),
-            'G47.3': ('73430006', 'Sleep apnea (disorder)'),
-            'G56': ('57406009', 'Carpal tunnel syndrome (disorder)'),
-            'G62': ('42658009', 'Peripheral neuropathy (disorder)'),
-
-            # ══ Eye disorders (H00-H59) ══
-            'H25': ('193570009', 'Cataract (disorder)'),
-            'H26': ('193570009', 'Cataract (disorder)'),
-            'H40': ('23986001', 'Glaucoma (disorder)'),
-            'H52': ('39021009', 'Refractive error (disorder)'),
-
-            # ══ Ear disorders (H60-H95) ══
-            'H66': ('65363002', 'Otitis media (disorder)'),
-            'H91': ('15188001', 'Hearing loss (disorder)'),
-
-            # ══ Cardiovascular (I00-I99) ══
-            'I10': ('38341003', 'Hypertensive disorder (disorder)'),
-            'I11': ('64715009', 'Hypertensive heart disease (disorder)'),
-            'I13': ('194779001', 'Hypertensive heart and renal disease (disorder)'),
-            'I20': ('194828000', 'Angina pectoris (disorder)'),
-            'I20.0': ('4557003', 'Unstable angina (disorder)'),
-            'I20.9': ('194828000', 'Angina pectoris (disorder)'),
-            'I21': ('22298006', 'Myocardial infarction (disorder)'),
-            'I21.0': ('401303003', 'Anterior STEMI (disorder)'),
-            'I21.1': ('401314000', 'Inferior STEMI (disorder)'),
-            'I21.4': ('401314000', 'NSTEMI (disorder)'),
-            'I21.9': ('22298006', 'Myocardial infarction (disorder)'),
-            'I25': ('53741008', 'Coronary heart disease (disorder)'),
-            'I25.1': ('53741008', 'Coronary heart disease (disorder)'),
-            'I25.10': ('53741008', 'Coronary heart disease (disorder)'),
-            'I26': ('59282003', 'Pulmonary embolism (disorder)'),
-            'I26.9': ('59282003', 'Pulmonary embolism (disorder)'),
-            'I27': ('70995007', 'Pulmonary hypertension (disorder)'),
-            'I42': ('57809008', 'Cardiomyopathy (disorder)'),
-            'I44': ('27885002', 'Heart block (disorder)'),
-            'I47': ('6456007', 'Supraventricular tachycardia (disorder)'),
-            'I48': ('49436004', 'Atrial fibrillation (disorder)'),
-            'I48.0': ('49436004', 'Atrial fibrillation (disorder)'),
-            'I48.1': ('5370000', 'Atrial flutter (disorder)'),
-            'I48.9': ('49436004', 'Atrial fibrillation (disorder)'),
-            'I49': ('698247007', 'Cardiac arrhythmia (disorder)'),
-            'I50': ('84114007', 'Heart failure (disorder)'),
-            'I50.0': ('42343007', 'Congestive heart failure (disorder)'),
-            'I50.1': ('48447003', 'Left ventricular failure (disorder)'),
-            'I50.9': ('84114007', 'Heart failure (disorder)'),
-            'I51': ('56265001', 'Heart disease (disorder)'),
-            'I60': ('274100004', 'Subarachnoid hemorrhage (disorder)'),
-            'I61': ('274100004', 'Intracerebral hemorrhage (disorder)'),
-            'I63': ('422504002', 'Ischemic stroke (disorder)'),
-            'I63.9': ('422504002', 'Ischemic stroke (disorder)'),
-            'I64': ('230690007', 'Stroke (disorder)'),
-            'I65': ('64586002', 'Carotid artery stenosis (disorder)'),
-            'I67': ('62914000', 'Cerebrovascular disease (disorder)'),
-            'I70': ('38716007', 'Atherosclerosis (disorder)'),
-            'I71': ('233985008', 'Aortic aneurysm (disorder)'),
-            'I73': ('400047006', 'Peripheral vascular disease (disorder)'),
-            'I80': ('128053003', 'Deep vein thrombosis (disorder)'),
-            'I80.2': ('128053003', 'Deep vein thrombosis (disorder)'),
-            'I82': ('111293003', 'Venous thrombosis (disorder)'),
-            'I83': ('128060009', 'Varicose veins (disorder)'),
-            'I87': ('234042001', 'Chronic venous insufficiency (disorder)'),
-
-            # ══ Respiratory (J00-J99) ══
-            'J00': ('82272006', 'Common cold (disorder)'),
-            'J02': ('90176007', 'Pharyngitis (disorder)'),
-            'J03': ('17741008', 'Tonsillitis (disorder)'),
-            'J06': ('54150009', 'Upper respiratory infection (disorder)'),
-            'J06.9': ('54150009', 'Upper respiratory infection (disorder)'),
-            'J09': ('442696006', 'Influenza (disorder)'),
-            'J11': ('442696006', 'Influenza (disorder)'),
-            'J12': ('75570004', 'Viral pneumonia (disorder)'),
-            'J15': ('53084003', 'Bacterial pneumonia (disorder)'),
-            'J18': ('233604007', 'Pneumonia (disorder)'),
-            'J18.9': ('233604007', 'Pneumonia (disorder)'),
-            'J20': ('32398004', 'Acute bronchitis (disorder)'),
-            'J21': ('4120002', 'Bronchiolitis (disorder)'),
-            'J22': ('50417007', 'Lower respiratory infection (disorder)'),
-            'J30': ('61582004', 'Allergic rhinitis (disorder)'),
-            'J32': ('40055000', 'Chronic sinusitis (disorder)'),
-            'J34': ('36971009', 'Sinusitis (disorder)'),
-            'J38': ('45913009', 'Laryngitis (disorder)'),
-            'J40': ('32398004', 'Bronchitis (disorder)'),
-            'J42': ('63480004', 'Chronic bronchitis (disorder)'),
-            'J43': ('87433001', 'Pulmonary emphysema (disorder)'),
-            'J44': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
-            'J44.0': ('195951007', 'Acute exacerbation of COPD (disorder)'),
-            'J44.1': ('195951007', 'Acute exacerbation of COPD (disorder)'),
-            'J44.9': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
-            'J45': ('195967001', 'Asthma (disorder)'),
-            'J45.2': ('195967001', 'Asthma (disorder)'),
-            'J45.9': ('195967001', 'Asthma (disorder)'),
-            'J46': ('304527002', 'Acute severe asthma (disorder)'),
-            'J47': ('12295008', 'Bronchiectasis (disorder)'),
-            'J80': ('67782005', 'Acute respiratory distress syndrome (disorder)'),
-            'J81': ('19242006', 'Pulmonary edema (disorder)'),
-            'J84': ('51615001', 'Pulmonary fibrosis (disorder)'),
-            'J90': ('60046008', 'Pleural effusion (disorder)'),
-            'J93': ('36118008', 'Pneumothorax (disorder)'),
-            'J96': ('65710008', 'Respiratory failure (disorder)'),
-            'J96.0': ('65710008', 'Acute respiratory failure (disorder)'),
-
-            # ══ Digestive system (K00-K95) ══
-            'K04': ('109600005', 'Dental abscess (disorder)'),
-            'K21': ('235595009', 'Gastro-esophageal reflux disease (disorder)'),
-            'K21.0': ('235595009', 'Gastro-esophageal reflux disease (disorder)'),
-            'K25': ('13200003', 'Peptic ulcer (disorder)'),
-            'K26': ('51868009', 'Duodenal ulcer (disorder)'),
-            'K27': ('13200003', 'Peptic ulcer (disorder)'),
-            'K29': ('4556007', 'Gastritis (disorder)'),
-            'K30': ('162031009', 'Dyspepsia (disorder)'),
-            'K35': ('74400008', 'Appendicitis (disorder)'),
-            'K35.8': ('85189001', 'Acute appendicitis (disorder)'),
-            'K40': ('396232000', 'Inguinal hernia (disorder)'),
-            'K42': ('236037000', 'Umbilical hernia (disorder)'),
-            'K43': ('414396006', 'Incisional hernia (disorder)'),
-            'K44': ('84089009', 'Hiatal hernia (disorder)'),
-            'K50': ('34000006', 'Crohn disease (disorder)'),
-            'K51': ('64766004', 'Ulcerative colitis (disorder)'),
-            'K52': ('24526004', 'Inflammatory bowel disease (disorder)'),
-            'K55': ('399122003', 'Mesenteric ischemia (disorder)'),
-            'K56': ('81060008', 'Intestinal obstruction (disorder)'),
-            'K57': ('397881000', 'Diverticular disease (disorder)'),
-            'K57.3': ('427910000', 'Diverticulitis (disorder)'),
-            'K58': ('10743008', 'Irritable bowel syndrome (disorder)'),
-            'K59': ('14760008', 'Constipation (disorder)'),
-            'K60': ('399096009', 'Anal fissure (disorder)'),
-            'K61': ('399096009', 'Anal abscess (disorder)'),
-            'K62': ('423902002', 'Rectal bleeding (finding)'),
-            'K63': ('34093004', 'Intestinal disorder (disorder)'),
-            'K64': ('70153002', 'Hemorrhoids (disorder)'),
-            'K64.0': ('90458007', 'First degree hemorrhoids (disorder)'),
-            'K64.1': ('90459004', 'Second degree hemorrhoids (disorder)'),
-            'K64.2': ('90460009', 'Third degree hemorrhoids (disorder)'),
-            'K64.3': ('90461008', 'Fourth degree hemorrhoids (disorder)'),
-            'K64.9': ('70153002', 'Hemorrhoids (disorder)'),
-            'K70': ('235875008', 'Alcoholic liver disease (disorder)'),
-            'K72': ('59927004', 'Hepatic failure (disorder)'),
-            'K74': ('19943007', 'Cirrhosis of liver (disorder)'),
-            'K76': ('235856003', 'Fatty liver (disorder)'),
-            'K80': ('235919008', 'Cholelithiasis (disorder)'),
-            'K81': ('65275009', 'Cholecystitis (disorder)'),
-            'K85': ('197456007', 'Acute pancreatitis (disorder)'),
-            'K86': ('235494005', 'Chronic pancreatitis (disorder)'),
-            'K92': ('74474003', 'Gastrointestinal hemorrhage (disorder)'),
-            'K92.0': ('37372002', 'Hematemesis (finding)'),
-            'K92.1': ('2901004', 'Melena (finding)'),
-
-            # ══ Skin (L00-L99) ══
-            'L02': ('399959002', 'Skin abscess (disorder)'),
-            'L03': ('128045006', 'Cellulitis (disorder)'),
-            'L08': ('95320005', 'Skin infection (disorder)'),
-            'L20': ('24079001', 'Atopic dermatitis (disorder)'),
-            'L21': ('50563003', 'Seborrheic dermatitis (disorder)'),
-            'L23': ('238575004', 'Allergic contact dermatitis (disorder)'),
-            'L30': ('43116000', 'Dermatitis (disorder)'),
-            'L40': ('9014002', 'Psoriasis (disorder)'),
-            'L50': ('126485001', 'Urticaria (disorder)'),
-            'L70': ('88616000', 'Acne (disorder)'),
-            'L97': ('95345008', 'Leg ulcer (disorder)'),
-            'L98': ('201101007', 'Skin ulcer (disorder)'),
-
-            # ══ Musculoskeletal (M00-M99) ══
-            'M05': ('69896004', 'Rheumatoid arthritis (disorder)'),
-            'M06': ('69896004', 'Rheumatoid arthritis (disorder)'),
-            'M10': ('90560007', 'Gout (disorder)'),
-            'M13': ('3723001', 'Arthritis (disorder)'),
-            'M15': ('396275006', 'Osteoarthritis (disorder)'),
-            'M16': ('239872002', 'Hip osteoarthritis (disorder)'),
-            'M17': ('239873007', 'Knee osteoarthritis (disorder)'),
-            'M19': ('396275006', 'Osteoarthritis (disorder)'),
-            'M25': ('57676002', 'Joint pain (finding)'),
-            'M32': ('55464009', 'Systemic lupus erythematosus (disorder)'),
-            'M34': ('89155008', 'Systemic sclerosis (disorder)'),
-            'M35': ('396332003', 'Connective tissue disease (disorder)'),
-            'M41': ('298382003', 'Scoliosis (disorder)'),
-            'M43': ('278860009', 'Spinal stenosis (disorder)'),
-            'M47': ('387800002', 'Spondylosis (disorder)'),
-            'M48': ('278860009', 'Spinal stenosis (disorder)'),
-            'M50': ('76107001', 'Cervical disc disorder (disorder)'),
-            'M51': ('243796009', 'Lumbar disc disorder (disorder)'),
-            'M54': ('161891005', 'Backache (finding)'),
-            'M54.5': ('279039007', 'Low back pain (finding)'),
-            'M62': ('68962001', 'Myalgia (finding)'),
-            'M65': ('34840004', 'Tendinitis (disorder)'),
-            'M72': ('302192005', 'Plantar fasciitis (disorder)'),
-            'M75': ('45326000', 'Shoulder disorder (disorder)'),
-            'M77': ('202855006', 'Enthesopathy (disorder)'),
-            'M79': ('36083008', 'Fibromyalgia (disorder)'),
-            'M79.3': ('57406009', 'Panniculitis (disorder)'),
-            'M80': ('64859006', 'Osteoporosis with fracture (disorder)'),
-            'M81': ('64859006', 'Osteoporosis (disorder)'),
-
-            # ══ Genitourinary (N00-N99) ══
-            'N10': ('45816000', 'Pyelonephritis (disorder)'),
-            'N12': ('45816000', 'Pyelonephritis (disorder)'),
-            'N13': ('236463006', 'Hydronephrosis (disorder)'),
-            'N17': ('14669001', 'Acute kidney injury (disorder)'),
-            'N17.9': ('14669001', 'Acute kidney injury (disorder)'),
-            'N18': ('709044004', 'Chronic kidney disease (disorder)'),
-            'N18.1': ('431855005', 'CKD stage 1 (disorder)'),
-            'N18.2': ('431856006', 'CKD stage 2 (disorder)'),
-            'N18.3': ('433144002', 'CKD stage 3 (disorder)'),
-            'N18.4': ('431857002', 'CKD stage 4 (disorder)'),
-            'N18.5': ('433146000', 'CKD stage 5 (disorder)'),
-            'N18.9': ('709044004', 'Chronic kidney disease (disorder)'),
-            'N19': ('42399005', 'Renal failure (disorder)'),
-            'N20': ('95570007', 'Kidney stone (disorder)'),
-            'N23': ('95570007', 'Kidney stone (disorder)'),
-            'N28': ('90708001', 'Kidney disease (disorder)'),
-            'N30': ('38822007', 'Cystitis (disorder)'),
-            'N32': ('197854006', 'Bladder disorder (disorder)'),
-            'N39': ('68566005', 'Urinary tract infection (disorder)'),
-            'N39.0': ('68566005', 'Urinary tract infection (disorder)'),
-            'N40': ('266569009', 'Benign prostatic hyperplasia (disorder)'),
-            'N41': ('9713002', 'Prostatitis (disorder)'),
-            'N45': ('31070006', 'Epididymitis (disorder)'),
-            'N81': ('30288003', 'Pelvic organ prolapse (disorder)'),
-            'N92': ('386692008', 'Menorrhagia (disorder)'),
-            'N94': ('431416004', 'Dysmenorrhea (finding)'),
-            'N95': ('161712005', 'Menopausal syndrome (disorder)'),
-
-            # ══ Pregnancy/Childbirth (O00-O99) ══
-            'O00': ('34801009', 'Ectopic pregnancy (disorder)'),
-            'O03': ('17369002', 'Miscarriage (disorder)'),
-            'O10': ('48194001', 'Pre-existing hypertension (disorder)'),
-            'O14': ('15938005', 'Pre-eclampsia (disorder)'),
-            'O24': ('11687002', 'Gestational diabetes (disorder)'),
-            'O42': ('289259007', 'Premature rupture of membranes (disorder)'),
-            'O60': ('282020008', 'Preterm labor (disorder)'),
-            'O72': ('47821001', 'Postpartum hemorrhage (disorder)'),
-
-            # ══ Perinatal (P00-P96) ══
-            'P07': ('395507008', 'Low birth weight (finding)'),
-            'P22': ('46775006', 'Respiratory distress of newborn (disorder)'),
-            'P59': ('387712008', 'Neonatal jaundice (disorder)'),
-
-            # ══ Congenital (Q00-Q99) ══
-            'Q21': ('253273004', 'Congenital heart defect (disorder)'),
-            'Q25': ('13213009', 'Congenital heart defect (disorder)'),
-
-            # ══ Symptoms/Signs (R00-R99) ══
-            'R00': ('80313002', 'Palpitations (finding)'),
-            'R04': ('66857006', 'Hemoptysis (finding)'),
-            'R05': ('49727002', 'Cough (finding)'),
-            'R06': ('267036007', 'Dyspnea (finding)'),
-            'R06.0': ('267036007', 'Dyspnea (finding)'),
-            'R07': ('29857009', 'Chest pain (finding)'),
-            'R07.4': ('29857009', 'Chest pain (finding)'),
-            'R09': ('409668002', 'Respiratory symptom (finding)'),
-            'R10': ('21522001', 'Abdominal pain (finding)'),
-            'R10.4': ('21522001', 'Abdominal pain (finding)'),
-            'R11': ('422400008', 'Vomiting (disorder)'),
-            'R13': ('40739000', 'Dysphagia (disorder)'),
-            'R19': ('62315008', 'Diarrhea (finding)'),
-            'R20': ('279079003', 'Paresthesia (finding)'),
-            'R21': ('271807003', 'Rash (finding)'),
-            'R25': ('26079004', 'Tremor (finding)'),
-            'R26': ('22325002', 'Gait abnormality (finding)'),
-            'R31': ('34436003', 'Hematuria (finding)'),
-            'R32': ('165232002', 'Urinary incontinence (finding)'),
-            'R33': ('267064002', 'Urinary retention (disorder)'),
-            'R35': ('162116003', 'Polyuria (finding)'),
-            'R40': ('271594007', 'Stupor (finding)'),
-            'R41': ('386807006', 'Memory impairment (finding)'),
-            'R42': ('404640003', 'Dizziness (finding)'),
-            'R50': ('386661006', 'Fever (finding)'),
-            'R51': ('25064002', 'Headache (finding)'),
-            'R52': ('22253000', 'Pain (finding)'),
-            'R53': ('84229001', 'Fatigue (finding)'),
-            'R55': ('271594007', 'Syncope (disorder)'),
-            'R56': ('91175000', 'Seizure (finding)'),
-            'R57': ('27942005', 'Shock (disorder)'),
-            'R60': ('79654002', 'Edema (finding)'),
-            'R63': ('64379006', 'Weight loss (finding)'),
-            'R73': ('80394007', 'Hyperglycemia (disorder)'),
-
-            # ══ Injuries (S00-T98) ══
-            'S00': ('125605004', 'Head injury (disorder)'),
-            'S06': ('127295002', 'Traumatic brain injury (disorder)'),
-            'S22': ('263102004', 'Rib fracture (disorder)'),
-            'S32': ('414564002', 'Hip fracture (disorder)'),
-            'S42': ('64665009', 'Shoulder fracture (disorder)'),
-            'S52': ('30400009', 'Forearm fracture (disorder)'),
-            'S62': ('416393002', 'Hand fracture (disorder)'),
-            'S72': ('414564002', 'Hip fracture (disorder)'),
-            'S82': ('373766000', 'Lower leg fracture (disorder)'),
-            'T78': ('419076005', 'Allergic reaction (disorder)'),
-            'T78.2': ('39579001', 'Anaphylaxis (disorder)'),
-
-            # ══ External causes (V00-Y99) ══
-            'W19': ('217082002', 'Fall (event)'),
-
-            # ══ Factors influencing health (Z00-Z99) ══
-            'Z85': ('161432005', 'History of malignancy (situation)'),
-            'Z86': ('312850006', 'History of disease (situation)'),
-            'Z87': ('312850006', 'History of disease (situation)'),
-            'Z95': ('429064006', 'Presence of cardiac device (finding)'),
-            'Z96': ('407585007', 'Presence of implant (finding)'),
-        }
-
-        # Multi-pattern diagnosis extraction - try multiple formats
-        DIAGNOSIS_PATTERNS = [
-            # Pattern 1: "Diagnosis\n* Condition [ICD]" or "Post-op Diagnosis\n* Condition [ICD]"
-            (r'(?:Post-?op\s+)?Diagnosis\s*[\n\r](?:.*?[\n\r])*?\s*\*\s*([A-Za-z][^\[\n]{2,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
-            # Pattern 2: "1. Condition [ICD]" or "- Condition [ICD]" after Diagnosis header
-            (r'Diagnos[ie]s?[:\s]*[\n\r](?:.*?[\n\r])*?(?:\d+\.|-)\s*([A-Za-z][^\[\n]{2,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
-            # Pattern 3: "Condition (ICD-10: K64.9)" or "Condition (K64.9)"
-            (r'Diagnos[ie]s?[:\s]*[\n\r](?:.*?[\n\r])*?([A-Za-z][^\(\n]{3,50})\s*\((?:ICD-?10)?[:\s]*([A-Z]\d+\.?\d*)\)', True),
-            # Pattern 4: "Principal/Primary diagnosis: Condition" (no ICD code)
-            (r'(?:Principal|Primary|Main|Presenting)\s+[Dd]iagnos[ie]s?[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
-            # Pattern 5: "Admitted with/for: Condition" (no ICD code)
-            (r'(?:Admitted|Presented|Attending)\s+(?:with|for)[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
-            # Pattern 6: "Reason for admission: Condition" (no ICD code)
-            (r'(?:Reason|Cause)\s+(?:for|of)\s+(?:admission|referral|attendance)[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
-            # Pattern 7: Table format "| Condition | K64.9 |"
-            (r'\|\s*([A-Za-z][^\|]{3,50})\s*\|\s*([A-Z]\d+\.?\d*)\s*\|', True),
-            # Pattern 8: "Diagnosis: Condition [ICD]" inline
-            (r'Diagnos[ie]s?[:\s]+([A-Za-z][^\[\n]{3,50})\s*\[([A-Z]\d+\.?\d*)\]', True),
-            # Pattern 9: "Final diagnosis: Condition"
-            (r'(?:Final|Confirmed|Working)\s+[Dd]iagnos[ie]s?[:\s]+([A-Za-z][^\n\[\(]{3,60})', False),
-        ]
-
-        existing_diag_texts = {d.get("text", "").lower() for d in diagnoses}
-        extracted_count = 0
-
-        for pattern, has_icd in DIAGNOSIS_PATTERNS:
-            if extracted_count >= 5:  # Limit to prevent over-extraction
-                break
-
-            for match in _re_diag.finditer(pattern, text, _re_diag.IGNORECASE | _re_diag.MULTILINE):
-                diag_term = match.group(1).strip()
-                icd_code = match.group(2).strip() if has_icd and match.lastindex >= 2 else None
-
-                # Skip if already extracted or too short
-                if diag_term.lower() in existing_diag_texts or len(diag_term) < 3:
-                    continue
-
-                # Skip common false positives
-                skip_terms = {'patient', 'please', 'follow', 'review', 'continue', 'discharge', 'summary'}
-                if diag_term.lower().split()[0] in skip_terms:
-                    continue
-
-                # Try to get SNOMED code from ICD mapping
-                snomed_code = None
-                snomed_desc = None
-                if icd_code and icd_code in ICD_TO_SNOMED:
-                    snomed_code, snomed_desc = ICD_TO_SNOMED[icd_code]
-                elif icd_code:
-                    # Try prefix match (K64.9 -> K64)
-                    icd_prefix = icd_code.split('.')[0]
-                    if icd_prefix in ICD_TO_SNOMED:
-                        snomed_code, snomed_desc = ICD_TO_SNOMED[icd_prefix]
-
-                # If no ICD or no mapping, try Comprehend lookup
-                if not snomed_code:
-                    try:
-                        _diag_client = make_client("comprehendmedical")
-                        diag_resp = _diag_client.infer_snomedct(Text=diag_term)
-                        diag_entities = diag_resp.get("Entities", [])
-                        if diag_entities:
-                            concepts = diag_entities[0].get("SNOMEDCTConcepts", [])
-                            if concepts:
-                                top = max(concepts, key=lambda c: c.get("Score", 0))
-                                if top.get("Score", 0) >= 0.60:  # STRICT: Only accept confidence >= 0.60
-                                    snomed_code = top.get("Code")
-                                    snomed_desc = top.get("Description")
-                    except Exception:
-                        pass
-
-                if snomed_code:
-                    diag_entry = {
-                        "text": diag_term,
-                        "category": "DIAGNOSIS",
-                        "snomed_code": snomed_code,
-                        "description": snomed_desc or diag_term,
-                        "confidence": 0.90 if icd_code else 0.75,  # Higher if has ICD code
-                        "entity_id": str(uuid.uuid4())[:8],
-                        "source": "diagnosis_section_extraction",
-                        "clinical_category": "diagnoses",
-                        "icd_code": icd_code,
-                        "start_pos": match.start(1),
-                        "end_pos": match.end(1),
-                    }
-                    diagnoses.append(diag_entry)
-                    all_entities.append(diag_entry)
-                    existing_diag_texts.add(diag_term.lower())
-                    extracted_count += 1
-                    print(f"[DEBUG] Extracted diagnosis from section: '{diag_term}' -> SNOMED {snomed_code} (ICD: {icd_code})", file=sys.stderr)
-
-    except Exception as e:
-        import sys
-        print(f"[WARN] Diagnosis section extraction failed: {e}", file=sys.stderr)
 
     # ── Temporal Reasoning: Classify current vs historical ────────────────────────
     # Every entity gets a temporal state: current, historical, resolved, suspected, chronic, acute
-    temporal_stats = {"current": 0, "historical": 0, "resolved": 0, "suspected": 0, "chronic": 0, "acute": 0}
     if _HAS_TEMPORAL_REASONER:
         try:
             reasoner = create_temporal_reasoner(window_size=8)
