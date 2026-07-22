@@ -1047,10 +1047,122 @@ def run_comprehend_medical(text: str) -> dict:
     # Extract candidates from their appropriate sections
     # ═══════════════════════════════════════════════════════════════════════════════
 
+    # Common UK medication SNOMED codes (dm+d aligned)
+    MEDICATION_SNOMED = {
+        # Pain/Analgesics
+        'paracetamol': ('387517004', 'Paracetamol (substance)'),
+        'ibuprofen': ('387207008', 'Ibuprofen (substance)'),
+        'naproxen': ('372588000', 'Naproxen (substance)'),
+        'codeine': ('387494007', 'Codeine (substance)'),
+        'tramadol': ('386858008', 'Tramadol (substance)'),
+        'morphine': ('373529000', 'Morphine (substance)'),
+        'co-codamol': ('418830001', 'Co-codamol (product)'),
+        'aspirin': ('387458008', 'Aspirin (substance)'),
+        # GI medications
+        'lansoprazole': ('386873009', 'Lansoprazole (substance)'),
+        'omeprazole': ('387137007', 'Omeprazole (substance)'),
+        'esomeprazole': ('396047003', 'Esomeprazole (substance)'),
+        'pantoprazole': ('395868008', 'Pantoprazole (substance)'),
+        'ranitidine': ('372755005', 'Ranitidine (substance)'),
+        'metoclopramide': ('372776000', 'Metoclopramide (substance)'),
+        'ondansetron': ('372487007', 'Ondansetron (substance)'),
+        'macrogol': ('414355008', 'Macrogol (substance)'),
+        'macrogol compound': ('414355008', 'Macrogol (substance)'),
+        'loperamide': ('387040009', 'Loperamide (substance)'),
+        'senna': ('411619001', 'Senna (substance)'),
+        'lactulose': ('387325003', 'Lactulose (substance)'),
+        'movicol': ('414355008', 'Macrogol (substance)'),
+        # Cardiovascular
+        'amlodipine': ('386864001', 'Amlodipine (substance)'),
+        'ramipril': ('386872004', 'Ramipril (substance)'),
+        'lisinopril': ('386873009', 'Lisinopril (substance)'),
+        'atenolol': ('387506000', 'Atenolol (substance)'),
+        'bisoprolol': ('386868003', 'Bisoprolol (substance)'),
+        'metoprolol': ('372826007', 'Metoprolol (substance)'),
+        'simvastatin': ('387584000', 'Simvastatin (substance)'),
+        'atorvastatin': ('373444002', 'Atorvastatin (substance)'),
+        'rosuvastatin': ('412329001', 'Rosuvastatin (substance)'),
+        'clopidogrel': ('386952008', 'Clopidogrel (substance)'),
+        'warfarin': ('372756006', 'Warfarin (substance)'),
+        'rivaroxaban': ('442031002', 'Rivaroxaban (substance)'),
+        'apixaban': ('698090000', 'Apixaban (substance)'),
+        'furosemide': ('387475002', 'Furosemide (substance)'),
+        'bendroflumethiazide': ('387525000', 'Bendroflumethiazide (substance)'),
+        'doxazosin': ('372508002', 'Doxazosin (substance)'),
+        'losartan': ('373567002', 'Losartan (substance)'),
+        'candesartan': ('395976007', 'Candesartan (substance)'),
+        'diltiazem': ('372793000', 'Diltiazem (substance)'),
+        'digoxin': ('387461009', 'Digoxin (substance)'),
+        'glyceryl trinitrate': ('387404004', 'Glyceryl trinitrate (substance)'),
+        'isosorbide mononitrate': ('386858003', 'Isosorbide mononitrate (substance)'),
+        # Diabetes
+        'metformin': ('372567009', 'Metformin (substance)'),
+        'gliclazide': ('395973004', 'Gliclazide (substance)'),
+        'sitagliptin': ('423307000', 'Sitagliptin (substance)'),
+        'empagliflozin': ('703673007', 'Empagliflozin (substance)'),
+        'dapagliflozin': ('703129008', 'Dapagliflozin (substance)'),
+        'insulin': ('67866001', 'Insulin (substance)'),
+        # Respiratory
+        'salbutamol': ('372897005', 'Salbutamol (substance)'),
+        'beclometasone': ('116571008', 'Beclometasone (substance)'),
+        'fluticasone': ('396064000', 'Fluticasone (substance)'),
+        'tiotropium': ('407030007', 'Tiotropium (substance)'),
+        'montelukast': ('373728005', 'Montelukast (substance)'),
+        # Antibiotics
+        'amoxicillin': ('372687004', 'Amoxicillin (substance)'),
+        'co-amoxiclav': ('89519005', 'Co-amoxiclav (product)'),
+        'flucloxacillin': ('387544009', 'Flucloxacillin (substance)'),
+        'clarithromycin': ('387487009', 'Clarithromycin (substance)'),
+        'metronidazole': ('372602008', 'Metronidazole (substance)'),
+        'ciprofloxacin': ('372840008', 'Ciprofloxacin (substance)'),
+        'trimethoprim': ('387179001', 'Trimethoprim (substance)'),
+        'nitrofurantoin': ('373543005', 'Nitrofurantoin (substance)'),
+        'doxycycline': ('372478003', 'Doxycycline (substance)'),
+        'penicillin': ('764146007', 'Penicillin (substance)'),
+        # Mental health
+        'sertraline': ('372594008', 'Sertraline (substance)'),
+        'citalopram': ('372596005', 'Citalopram (substance)'),
+        'fluoxetine': ('372767007', 'Fluoxetine (substance)'),
+        'mirtazapine': ('386847004', 'Mirtazapine (substance)'),
+        'venlafaxine': ('372490001', 'Venlafaxine (substance)'),
+        'amitriptyline': ('372726002', 'Amitriptyline (substance)'),
+        'diazepam': ('387264003', 'Diazepam (substance)'),
+        'lorazepam': ('387106007', 'Lorazepam (substance)'),
+        'zopiclone': ('387352009', 'Zopiclone (substance)'),
+        'pregabalin': ('415160008', 'Pregabalin (substance)'),
+        'gabapentin': ('386845007', 'Gabapentin (substance)'),
+        # Thyroid
+        'levothyroxine': ('710809001', 'Levothyroxine (substance)'),
+        'carbimazole': ('387209006', 'Carbimazole (substance)'),
+        # Steroids
+        'prednisolone': ('116601002', 'Prednisolone (substance)'),
+        'hydrocortisone': ('396458002', 'Hydrocortisone (substance)'),
+        'dexamethasone': ('372584003', 'Dexamethasone (substance)'),
+        # Other common
+        'folic acid': ('63718003', 'Folic acid (substance)'),
+        'ferrous sulfate': ('387402000', 'Ferrous sulfate (substance)'),
+        'ferrous fumarate': ('387401007', 'Ferrous fumarate (substance)'),
+        'vitamin d': ('30178006', 'Vitamin D (substance)'),
+        'colecalciferol': ('419192003', 'Colecalciferol (substance)'),
+        'cyclizine': ('372879000', 'Cyclizine (substance)'),
+        'domperidone': ('387181004', 'Domperidone (substance)'),
+        'prochlorperazine': ('372877003', 'Prochlorperazine (substance)'),
+        'allopurinol': ('387135004', 'Allopurinol (substance)'),
+        'colchicine': ('387413002', 'Colchicine (substance)'),
+    }
+
     def lookup_snomed(term: str, client) -> tuple:
-        """Lookup SNOMED code for a term using AWS Comprehend Medical."""
+        """Lookup SNOMED code for a term using local dictionary first, then AWS Comprehend."""
         if not term or len(term) < 2:
             return None, None, 0.0
+
+        # Try local medication dictionary first (case-insensitive)
+        term_lower = term.lower().strip()
+        if term_lower in MEDICATION_SNOMED:
+            code, desc = MEDICATION_SNOMED[term_lower]
+            return code, desc, 0.95  # High confidence for known medications
+
+        # Try AWS Comprehend as fallback
         try:
             resp = client.infer_snomedct(Text=term[:500])
             entities = resp.get("Entities", [])
@@ -1203,18 +1315,36 @@ def run_comprehend_medical(text: str) -> dict:
     # Extract from medication section
     if medication_section:
         print(f"[MED-DEBUG] Medication section content (first 500 chars): {medication_section[:500]}", file=sys.stderr)
+
+        # First, extract known compound medications with specific patterns
+        compound_patterns = [
+            (r'macrogol\s+compound(?:\s+NPF)?', 'macrogol compound'),
+            (r'co[- ]codamol', 'co-codamol'),
+            (r'co[- ]amoxiclav', 'co-amoxiclav'),
+        ]
+        for pattern, med_name in compound_patterns:
+            if re.search(pattern, medication_section, re.IGNORECASE):
+                if med_name.lower() not in seen_texts:
+                    snomed_code, snomed_desc, conf = lookup_snomed(med_name, client)
+                    if snomed_code:
+                        entity = create_entity(
+                            text=med_name, snomed_code=snomed_code, description=snomed_desc,
+                            confidence=max(conf, 0.85), category="MEDICATION",
+                            clinical_category="medications", source="medication_section"
+                        )
+                        medications.append(entity)
+                        all_entities.append(entity)
+                        seen_texts.add(med_name.lower())
+                        print(f"[EXTRACT] Medication (compound): '{med_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
         # Common medication patterns - order matters, most specific first
         med_patterns = [
-            # Bold drug name at start of line: "lansoprazole 15mg..." or "paracetamol 500mg..."
-            r'(?:^|\n)\s*([a-zA-Z][a-zA-Z\-]+(?:\s+(?:compound|complex|forte|retard))?)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
-            # "Paracetamol 500mg" or "Paracetamol 500 mg" inline
-            r'([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
+            # Bold drug name at start of line: "lansoprazole 15mg..."
+            r'(?:^|\n)\s*([a-zA-Z][a-zA-Z\-]+)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
+            # "Paracetamol 500mg" inline
+            r'([A-Za-z][A-Za-z\-]+)\s+(\d+\.?\d*)\s*(mg|mcg|g|ml|units?|iu)\b',
             # "Paracetamol tablets/capsules" etc.
             r'([A-Za-z][A-Za-z\-]+)\s+(?:tablets?|capsules?|injection|solution|cream|ointment|powder|oral|gastro[- ]resistant)\b',
-            # Bullet point medications "- Paracetamol"
-            r'[\*\-•]\s*([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s*(?:\d|$|\n)',
-            # Numbered list "1. Paracetamol"
-            r'\d+\.\s*([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+)?)\s*(?:\d|$|\n)',
         ]
 
         for pattern in med_patterns:
