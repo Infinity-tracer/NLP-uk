@@ -1202,6 +1202,7 @@ def run_comprehend_medical(text: str) -> dict:
     # ── MEDICATION EXTRACTOR ──
     # Extract from medication section
     if medication_section:
+        print(f"[MED-DEBUG] Medication section content (first 500 chars): {medication_section[:500]}", file=sys.stderr)
         # Common medication patterns - order matters, most specific first
         med_patterns = [
             # Bold drug name at start of line: "lansoprazole 15mg..." or "paracetamol 500mg..."
@@ -1233,7 +1234,9 @@ def run_comprehend_medical(text: str) -> dict:
                 if len(med_term) < 4 or not med_term[0].isalpha():
                     continue
 
+                print(f"[MED-DEBUG] Trying medication term: '{med_term}'", file=sys.stderr)
                 snomed_code, snomed_desc, conf = lookup_snomed(med_term, client)
+                print(f"[MED-DEBUG] SNOMED lookup result: code={snomed_code}, desc={snomed_desc}, conf={conf}", file=sys.stderr)
                 if snomed_code:
                     entity = create_entity(
                         text=med_term, snomed_code=snomed_code, description=snomed_desc,
