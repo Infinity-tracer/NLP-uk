@@ -465,6 +465,17 @@ _SNOMED_FALSE_POSITIVE_TERMS = {
     "leader", "matters", "aware", "polite", "kind", "expect", "treat", "staff",
     "action against", "verbally", "racially", "physically", "sexually",
     "stopping access", "services",
+    # FOLLOW-UP / APPOINTMENTS - these should NEVER be clinical entities
+    "follow-up", "follow up", "followup", "appointment", "appointments",
+    "telephone review", "telephone call", "phone call", "phone review",
+    "outpatient", "outpatient appointment", "clinic appointment",
+    "review appointment", "scheduled", "booked", "booking",
+    # LIFESTYLE ADVICE - not clinical entities
+    "diet", "dietary", "lifestyle", "exercise", "weight loss", "smoking cessation",
+    "alcohol advice", "healthy eating", "physical activity",
+    # ADMINISTRATIVE
+    "discharge", "discharged", "admitted", "admission", "transferred",
+    "referral", "referred", "gp letter", "letter sent", "copy to gp",
 }
 
 # SNOMED codes that are false positives (anatomy, procedure fragments)
@@ -735,112 +746,189 @@ def _get_doctype_snomed_codes(letter_type: str) -> list:
 
 
 def _categorize_snomed_entity(entity: dict, description: str, traits: list) -> str:
-    """Categorize SNOMED entity into one of 5 clinical categories:
-    - problems: Symptoms, findings, conditions (e.g., neck pain, tummy irritation)
-    - treatments: Therapeutic procedures (e.g., Mental Health treatment, Chemo)
-    - medications: Drugs and substances (e.g., Thyroxine, Aspirin)
-    - investigations: Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio)
-    - diagnoses: Confirmed conditions (e.g., ulcerative colitis)
+    """Categorize SNOMED entity into EXACTLY one of 5 clinical categories:
+
+    Categories (per validation requirements):
+    - diagnoses: ONLY confirmed diagnoses from Diagnosis sections
+    - problems: Active clinical problems (symptoms, findings, conditions)
+    - treatments: Procedures done TO the patient (operations, surgeries, therapies, injections)
+    - medications: Drugs the patient is prescribed/administered/discharged on
+    - investigations: Diagnostic tests and specimens (MRI, CT, biopsy, tissue specimens)
+
+    STRICT RULES:
+    - Each entity goes to exactly ONE category
+    - Specimens (tissue, biopsy) → investigations
+    - Findings (inflamed mucosa) → problems
+    - Procedure chemicals (phenol, lidocaine) → treatments (NOT medications)
+    - Flexible sigmoidoscopy → investigations (unless therapeutic context)
     """
     desc_lower = description.lower()
     text_lower = entity.get("Text", "").lower()
     category = entity.get("Category", "").upper()
     entity_type = entity.get("Type", "").upper()
-
-    # Check traits for DIAGNOSIS marker
     trait_names = [t.get("Name", "").upper() for t in traits]
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 1: SPECIMENS always go to INVESTIGATIONS
+    # ═══════════════════════════════════════════════════════════════════════════════
+    specimen_keywords = [
+        "specimen", "tissue", "biopsy", "sample", "histology", "cytology",
+        "rectal tissue", "anal tissue", "colon tissue", "skin tissue",
+    ]
+    if any(kw in text_lower or kw in desc_lower for kw in specimen_keywords):
+        return "investigations"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 2: PROCEDURE CHEMICALS are TREATMENTS, not medications
+    # ═══════════════════════════════════════════════════════════════════════════════
+    procedural_chemicals = [
+        "phenol", "lidocaine", "lignocaine", "bupivacaine", "contrast",
+        "chlorhexidine", "betadine", "iodine", "povidone",
+    ]
+    if any(chem in text_lower for chem in procedural_chemicals):
+        return "treatments"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 3: Check traits for DIAGNOSIS marker (confirmed diagnosis)
+    # ═══════════════════════════════════════════════════════════════════════════════
     if "DIAGNOSIS" in trait_names:
         return "diagnoses"
 
-    # Category-based classification from Comprehend Medical
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 4: Category-based classification from Comprehend Medical
+    # ═══════════════════════════════════════════════════════════════════════════════
     if category in ("MEDICATION", "GENERIC_NAME", "BRAND_NAME"):
-        return "medications"
+        # Double-check it's not a procedural agent
+        if not any(chem in text_lower for chem in procedural_chemicals):
+            return "medications"
+        return "treatments"
+
     if category == "TEST_NAME" or entity_type == "TEST_NAME":
         return "investigations"
+
     if category == "PROCEDURE_NAME" or entity_type == "PROCEDURE_NAME":
-        # Distinguish treatment procedures from diagnostic procedures
-        if any(x in desc_lower for x in ["imaging", "scan", "x-ray", "xray", "radiograph",
-                                          "angiograph", "endoscop", "colonoscop", "gastroscop",
-                                          "mammograph", "ultrasound", "mri", "ct ", "pet ",
-                                          "biopsy", "smear", "blood test", "urine test",
-                                          "ecg", "ekg", "echocardiog", "spirometr"]):
+        # Distinguish diagnostic procedures from therapeutic procedures
+        diagnostic_procedures = [
+            "imaging", "scan", "x-ray", "xray", "radiograph", "angiograph",
+            "endoscop", "colonoscop", "gastroscop", "sigmoidoscop",
+            "mammograph", "ultrasound", "mri", "ct ", "pet ",
+            "biopsy", "smear", "blood test", "urine test",
+            "ecg", "ekg", "echocardiog", "spirometr", "examination",
+        ]
+        if any(x in desc_lower for x in diagnostic_procedures):
             return "investigations"
         return "treatments"
+
     if category == "TREATMENT_NAME" or entity_type == "TREATMENT_NAME":
         return "treatments"
 
-    # SNOMED description-based classification (from semantic tag in parentheses)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 5: SNOMED description-based classification (semantic tag in parentheses)
+    # ═══════════════════════════════════════════════════════════════════════════════
     if "(procedure)" in desc_lower:
-        # Check if it's a diagnostic/investigative procedure
-        if any(x in desc_lower for x in ["imaging", "scan", "radiograph", "endoscop",
-                                          "examination", "measurement", "test", "biopsy",
-                                          "assessment", "screening", "angiograph"]):
+        # Diagnostic/investigative procedures
+        diagnostic_keywords = [
+            "imaging", "scan", "radiograph", "endoscop", "sigmoidoscop",
+            "examination", "measurement", "test", "biopsy", "assessment",
+            "screening", "angiograph", "colonoscop", "gastroscop",
+        ]
+        if any(x in desc_lower for x in diagnostic_keywords):
             return "investigations"
-        # Check if it's a therapeutic procedure
-        if any(x in desc_lower for x in ["therapy", "treatment", "chemotherapy", "radiotherapy",
-                                          "surgery", "surgical", "repair", "removal", "excision",
-                                          "transplant", "infusion", "injection", "counseling",
-                                          "rehabilitation", "physiotherapy"]):
+        # Therapeutic procedures
+        therapeutic_keywords = [
+            "therapy", "treatment", "chemotherapy", "radiotherapy",
+            "surgery", "surgical", "repair", "removal", "excision",
+            "transplant", "infusion", "injection", "counseling",
+            "rehabilitation", "physiotherapy", "banding", "ablation",
+        ]
+        if any(x in desc_lower for x in therapeutic_keywords):
             return "treatments"
         return "treatments"  # Default procedures to treatments
 
     if "(substance)" in desc_lower or "(product)" in desc_lower:
-        return "medications"
-
-    # Text-based classification for common patterns
-    # Investigations (diagnostic procedures and tests)
-    if any(x in text_lower for x in ["ct ", "ct scan", "mri", "x-ray", "xray", "ultrasound",
-                                      "blood test", "urine test", "ecg", "ekg", "angio",
-                                      "colonoscopy", "endoscopy", "biopsy", "smear",
-                                      "mammogram", "pet scan", "bone scan", "histology",
-                                      "tissue", "sigmoidoscopy", "gastroscopy", "cystoscopy",
-                                      "bronchoscopy", "laparoscopy", "arthroscopy",
-                                      "adhd assessment", "formal assessment", "psychiatric assessment",
-                                      "neurodevelopmental assessment", "developmental assessment",
-                                      "psychological assessment", "mental health assessment"]):
-        return "investigations"
-
-    # Treatments (therapeutic procedures including psychological therapies)
-    if any(x in text_lower for x in ["chemotherapy", "radiotherapy", "therapy", "treatment",
-                                      "surgery", "physiotherapy", "counseling", "counselling",
-                                      "rehabilitation", "injection", "excision", "removal",
-                                      "repair", "banding", "phenol", "sclerotherapy", "ablation",
-                                      "resection", "cbt", "cognitive behavioural", "cognitive behavioral",
-                                      "emdr", "psychotherapy", "psychoeducation", "psychological",
-                                      "intervention", "bpi", "desensiti"]):
+        # Ensure it's not a procedural chemical
+        if not any(chem in text_lower for chem in procedural_chemicals):
+            return "medications"
         return "treatments"
 
-    # Medications (common drug patterns)
-    if any(x in text_lower for x in ["mg", "mcg", "ml", "tablet", "capsule", "injection",
-                                      "aspirin", "paracetamol", "ibuprofen", "metformin"]):
-        return "medications"
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 6: Text-based classification for common patterns
+    # ═══════════════════════════════════════════════════════════════════════════════
 
-    # Symptoms/findings go to problems
+    # Investigations (diagnostic procedures, tests, specimens)
+    investigation_keywords = [
+        "ct ", "ct scan", "mri", "x-ray", "xray", "ultrasound",
+        "blood test", "urine test", "ecg", "ekg", "angio",
+        "colonoscopy", "endoscopy", "biopsy", "smear",
+        "mammogram", "pet scan", "bone scan", "histology",
+        "sigmoidoscopy", "gastroscopy", "cystoscopy",
+        "bronchoscopy", "laparoscopy", "arthroscopy",
+        "tissue specimen", "rectal tissue", "anal tissue",
+        "adhd assessment", "formal assessment", "psychiatric assessment",
+        "neurodevelopmental assessment", "developmental assessment",
+        "psychological assessment", "mental health assessment",
+    ]
+    if any(x in text_lower for x in investigation_keywords):
+        return "investigations"
+
+    # Treatments (therapeutic procedures - NOT medications)
+    treatment_keywords = [
+        "chemotherapy", "radiotherapy", "surgery", "physiotherapy",
+        "counseling", "counselling", "rehabilitation", "excision",
+        "removal", "repair", "banding", "sclerotherapy", "ablation",
+        "resection", "cbt", "cognitive behavioural", "cognitive behavioral",
+        "emdr", "psychotherapy", "psychoeducation", "appendectomy",
+        "phenol injection", "dialysis", "transplant",
+    ]
+    if any(x in text_lower for x in treatment_keywords):
+        return "treatments"
+
+    # Medications - only actual drugs (not procedural chemicals)
+    medication_patterns = [
+        "mg", "mcg", "ml", "tablet", "capsule",
+        "aspirin", "paracetamol", "ibuprofen", "metformin",
+        "lansoprazole", "omeprazole", "atorvastatin",
+    ]
+    if any(x in text_lower for x in medication_patterns):
+        # Exclude if it's a procedural agent
+        if not any(chem in text_lower for chem in procedural_chemicals):
+            return "medications"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 7: Symptoms/findings go to PROBLEMS
+    # ═══════════════════════════════════════════════════════════════════════════════
     if "SYMPTOM" in trait_names or "SIGN" in trait_names:
         return "problems"
     if "(finding)" in desc_lower or "(situation)" in desc_lower:
         return "problems"
 
-    # Mental health symptoms being treated (not formal diagnoses) go to problems
-    # These are often symptoms under treatment, not confirmed psychiatric diagnoses
+    # Clinical findings (inflamed mucosa, ulcer, bleeding)
+    finding_keywords = [
+        "inflamed", "inflammation", "inflam", "mucosa", "ulcer",
+        "bleeding", "mass", "lesion", "abnormal", "detected",
+    ]
+    if any(x in text_lower for x in finding_keywords):
+        return "problems"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 8: Mental health - distinguish symptoms from confirmed diagnoses
+    # ═══════════════════════════════════════════════════════════════════════════════
     mental_health_symptoms = [
         "anxiety", "anxious", "depression", "depressed", "trauma", "traumatic",
         "dissociation", "dissociative", "panic", "phobia", "stress", "ptsd",
         "mood", "disturbance", "hypervigilance", "intrusive", "flashback",
     ]
     if any(mh in text_lower for mh in mental_health_symptoms):
-        # Unless it's explicitly a disorder diagnosis (e.g., "Generalized anxiety disorder")
+        # Only diagnoses if explicitly a disorder from Diagnosis section
         if "(disorder)" in desc_lower and "disorder" in text_lower:
-            return "diagnoses"  # Formal disorder diagnosis
-        return "problems"  # Symptom being treated
+            return "diagnoses"
+        return "problems"
 
-    # Disorders are DIAGNOSES (clinical conditions with established diagnosis)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RULE 9: Disorders are DIAGNOSES (confirmed conditions)
+    # ═══════════════════════════════════════════════════════════════════════════════
     if "(disorder)" in desc_lower:
         return "diagnoses"
-
-    # Inflammation findings should be problems (not anatomy)
-    if any(x in text_lower for x in ["inflamed", "inflammation", "inflam", "colitis", "itis"]):
-        return "problems"
 
     # Default to problems for unclassified medical conditions
     return "problems"
@@ -902,13 +990,14 @@ def run_comprehend_medical(text: str) -> dict:
         if desc_lower.endswith("structure") and "disorder" not in desc_lower:
             continue
 
-        # Filter low confidence mappings (below 25%)
+        # STRICT: Accept SNOMED concepts only when confidence >= 0.60
         score = float(top.get("Score", e.get("Score", 0)))
-        if score < 0.25:
+        if score < 0.60:
             continue
 
-        # Filter specimen/sample entities - these are not clinical findings
-        if "(specimen)" in desc_lower:
+        # Specimens go to investigations (not filtered out)
+        # But skip specimen semantic type for general entities
+        if "(specimen)" in desc_lower and "tissue" not in text_lower and "biopsy" not in text_lower:
             continue
 
         seen_codes.add(code)
@@ -998,8 +1087,8 @@ def run_comprehend_medical(text: str) -> dict:
             except Exception:
                 pass
 
-            # Add medication entry (even without SNOMED code for display)
-            if snomed_code and snomed_code not in seen_codes:
+            # STRICT: Only add medication if confidence >= 0.60
+            if snomed_code and snomed_code not in seen_codes and snomed_conf >= 0.60:
                 seen_codes.add(snomed_code)
                 entry = {
                     "text":        text_val,
@@ -1015,22 +1104,7 @@ def run_comprehend_medical(text: str) -> dict:
                 }
                 medications.append(entry)
                 all_entities.append(entry)
-            elif not snomed_code:
-                # Add medication without SNOMED code (will show in text extraction)
-                entry = {
-                    "text":        text_val,
-                    "category":    "MEDICATION",
-                    "snomed_code": None,
-                    "description": text_val,
-                    "confidence":  round(float(e.get("Score", 0.7)), 3),
-                    "entity_id":   str(uuid.uuid4())[:8],
-                    "source":      "comprehend_medication_no_snomed",
-                    "clinical_category": "medications",
-                    "start_pos":   e.get("BeginOffset", 0),
-                    "end_pos":     e.get("EndOffset", len(text_val)),
-                }
-                medications.append(entry)
-                all_entities.append(entry)
+            # NOTE: Removed "no SNOMED code" fallback - per rules, every entity must have SNOMED
 
         # Also capture TEST_NAME entities as investigations
         elif category == "TEST_TREATMENT_PROCEDURE" and entity_type == "TEST_NAME":
@@ -1042,14 +1116,16 @@ def run_comprehend_medical(text: str) -> dict:
                     if test_concepts:
                         top_test = max(test_concepts, key=lambda c: c.get("Score", 0))
                         code = top_test.get("Code", "")
-                        if code and code not in seen_codes:
+                        test_conf = float(top_test.get("Score", 0))
+                        # STRICT: Only accept if confidence >= 0.60
+                        if code and code not in seen_codes and test_conf >= 0.60:
                             seen_codes.add(code)
                             entry = {
                                 "text":        text_val,
                                 "category":    "TEST_NAME",
                                 "snomed_code": code,
                                 "description": top_test.get("Description", ""),
-                                "confidence":  round(float(top_test.get("Score", e.get("Score", 0.7))), 3),
+                                "confidence":  round(test_conf, 3),
                                 "entity_id":   str(uuid.uuid4())[:8],
                                 "source":      "comprehend_investigation",
                                 "clinical_category": "investigations",
@@ -1066,6 +1142,11 @@ def run_comprehend_medical(text: str) -> dict:
         top3_fallback = _snomed_term_fallback(text, client)
         used_fallback = bool(top3_fallback)
         for entry in top3_fallback:
+            # STRICT: Only accept fallback entries with confidence >= 0.60
+            fallback_conf = entry.get("confidence", 0)
+            if fallback_conf < 0.60:
+                continue
+
             desc = entry.get("description", "")
             cat = entry.get("category", "").upper()
 
@@ -1868,7 +1949,7 @@ def run_comprehend_medical(text: str) -> dict:
                             concepts = diag_entities[0].get("SNOMEDCTConcepts", [])
                             if concepts:
                                 top = max(concepts, key=lambda c: c.get("Score", 0))
-                                if top.get("Score", 0) >= 0.5:  # Only accept high-confidence
+                                if top.get("Score", 0) >= 0.60:  # STRICT: Only accept confidence >= 0.60
                                     snomed_code = top.get("Code")
                                     snomed_desc = top.get("Description")
                     except Exception:
@@ -2939,13 +3020,52 @@ def deduplicate_entities(
 def deduplicate_snomed_data(snomed_data: dict) -> dict:
     """Apply deduplication to all entity lists in SNOMED data.
 
+    STRICT RULE: Each entity must appear in exactly ONE category.
+    Priority order for cross-category deduplication:
+    1. diagnoses (highest priority - confirmed conditions)
+    2. medications (prescription drugs)
+    3. treatments (procedures done to patient)
+    4. investigations (diagnostic tests)
+    5. problems (symptoms/findings - lowest priority)
+
     Returns new dict with deduplicated entity lists.
     """
     deduped = dict(snomed_data)  # Shallow copy
 
+    # First: deduplicate within each category
     for key in ["problems", "treatments", "medications", "investigations", "diagnoses"]:
         if key in deduped and isinstance(deduped[key], list):
             deduped[key] = deduplicate_entities(deduped[key])
+
+    # Second: cross-category deduplication - ensure each entity only in ONE category
+    # Priority: diagnoses > medications > treatments > investigations > problems
+    priority_order = ["diagnoses", "medications", "treatments", "investigations", "problems"]
+    seen_texts = set()  # Track text we've already assigned to a category
+    seen_snomed = set()  # Track SNOMED codes we've already assigned
+
+    for category in priority_order:
+        if category not in deduped or not isinstance(deduped[category], list):
+            continue
+
+        filtered_list = []
+        for entity in deduped[category]:
+            entity_text = entity.get("text", "").lower().strip()
+            snomed_code = entity.get("snomed_code", "")
+
+            # Skip if we've already seen this text or SNOMED code in a higher-priority category
+            if entity_text in seen_texts:
+                continue
+            if snomed_code and snomed_code in seen_snomed:
+                continue
+
+            # This entity belongs to this category
+            filtered_list.append(entity)
+            if entity_text:
+                seen_texts.add(entity_text)
+            if snomed_code:
+                seen_snomed.add(snomed_code)
+
+        deduped[category] = filtered_list
 
     # Rebuild all_entities from deduplicated lists
     all_entities = []
