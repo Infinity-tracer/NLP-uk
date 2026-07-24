@@ -5644,7 +5644,7 @@ def build_standardized_output(
         for k, v in type_map.items():
             if k.lower() in letter_type.lower():
                 doc_type = v
-                doc_type_confidence = 0.7
+                doc_type_confidence = 0.85
                 break
 
     metadata = {
