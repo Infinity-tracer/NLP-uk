@@ -1152,15 +1152,36 @@ def run_comprehend_medical(text: str) -> dict:
     }
 
     def lookup_snomed(term: str, client) -> tuple:
-        """Lookup SNOMED code for a term using local dictionary first, then AWS Comprehend."""
+        """Lookup SNOMED code for a term using local dictionaries first, then AWS Comprehend."""
         if not term or len(term) < 2:
             return None, None, 0.0
 
-        # Try local medication dictionary first (case-insensitive)
         term_lower = term.lower().strip()
+
+        # Try local medication dictionary first (case-insensitive)
         if term_lower in MEDICATION_SNOMED:
             code, desc = MEDICATION_SNOMED[term_lower]
             return code, desc, 0.95  # High confidence for known medications
+
+        # Try abbreviation dictionary (HTN, DM, AF, etc.)
+        if term_lower in ABBREVIATION_SNOMED:
+            code, desc = ABBREVIATION_SNOMED[term_lower]
+            return code, desc, 0.92  # High confidence for known abbreviations
+
+        # Try procedure dictionary
+        if term_lower in PROCEDURE_SNOMED:
+            code, desc = PROCEDURE_SNOMED[term_lower]
+            return code, desc, 0.90  # High confidence for known procedures
+
+        # Try mental health dictionary
+        if term_lower in MENTAL_HEALTH_SNOMED:
+            code, desc = MENTAL_HEALTH_SNOMED[term_lower]
+            return code, desc, 0.90  # High confidence for known mental health terms
+
+        # Try investigation dictionary
+        if term_lower in INVESTIGATION_SNOMED:
+            code, desc = INVESTIGATION_SNOMED[term_lower]
+            return code, desc, 0.90  # High confidence for known investigations
 
         # Try AWS Comprehend as fallback
         try:
@@ -1455,6 +1476,106 @@ def run_comprehend_medical(text: str) -> dict:
         'agoraphobia': ('386810004', 'Agoraphobia (disorder)'),
     }
 
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # ABBREVIATION -> SNOMED MAPPING
+    # Maps common NHS clinical abbreviations directly to SNOMED codes
+    # Enables extraction of abbreviations like "HTN", "DM", "AF" from text
+    # ═══════════════════════════════════════════════════════════════════════════════
+    ABBREVIATION_SNOMED = {
+        # Cardiovascular
+        'htn': ('38341003', 'Hypertension (disorder)'),
+        'af': ('49436004', 'Atrial fibrillation (disorder)'),
+        'afib': ('49436004', 'Atrial fibrillation (disorder)'),
+        'mi': ('22298006', 'Myocardial infarction (disorder)'),
+        'ami': ('57054005', 'Acute myocardial infarction (disorder)'),
+        'stemi': ('401303003', 'ST elevation myocardial infarction (disorder)'),
+        'nstemi': ('401314000', 'Non-ST elevation myocardial infarction (disorder)'),
+        'acs': ('394659003', 'Acute coronary syndrome (disorder)'),
+        'chf': ('42343007', 'Congestive heart failure (disorder)'),
+        'ccf': ('42343007', 'Congestive cardiac failure (disorder)'),
+        'hf': ('84114007', 'Heart failure (disorder)'),
+        'ihd': ('414545008', 'Ischaemic heart disease (disorder)'),
+        'cad': ('53741008', 'Coronary artery disease (disorder)'),
+        'pvd': ('400047006', 'Peripheral vascular disease (disorder)'),
+        'pad': ('399957001', 'Peripheral arterial disease (disorder)'),
+        'aaa': ('233985008', 'Abdominal aortic aneurysm (disorder)'),
+        'dvt': ('128053003', 'Deep vein thrombosis (disorder)'),
+        'pe': ('59282003', 'Pulmonary embolism (disorder)'),
+        'vte': ('111293003', 'Venous thromboembolism (disorder)'),
+        'svt': ('6456007', 'Supraventricular tachycardia (disorder)'),
+        'vt': ('25569003', 'Ventricular tachycardia (disorder)'),
+        'vf': ('71908006', 'Ventricular fibrillation (disorder)'),
+        # Diabetes/Metabolic
+        'dm': ('73211009', 'Diabetes mellitus (disorder)'),
+        't1dm': ('46635009', 'Type 1 diabetes mellitus (disorder)'),
+        't2dm': ('44054006', 'Type 2 diabetes mellitus (disorder)'),
+        'iddm': ('46635009', 'Insulin dependent diabetes mellitus (disorder)'),
+        'niddm': ('44054006', 'Non-insulin dependent diabetes mellitus (disorder)'),
+        'dka': ('420422005', 'Diabetic ketoacidosis (disorder)'),
+        'hhs': ('267384006', 'Hyperosmolar hyperglycemic state (disorder)'),
+        # Respiratory
+        'copd': ('13645005', 'Chronic obstructive pulmonary disease (disorder)'),
+        'lrti': ('50417007', 'Lower respiratory tract infection (disorder)'),
+        'urti': ('54150009', 'Upper respiratory tract infection (disorder)'),
+        'cap': ('385093006', 'Community-acquired pneumonia (disorder)'),
+        'hap': ('10625881000119104', 'Hospital-acquired pneumonia (disorder)'),
+        'ards': ('67782005', 'Acute respiratory distress syndrome (disorder)'),
+        'osa': ('78275009', 'Obstructive sleep apnea (disorder)'),
+        # Renal
+        'aki': ('14669001', 'Acute kidney injury (disorder)'),
+        'ckd': ('709044004', 'Chronic kidney disease (disorder)'),
+        'esrf': ('46177005', 'End-stage renal failure (disorder)'),
+        'eskd': ('46177005', 'End-stage kidney disease (disorder)'),
+        'uti': ('68566005', 'Urinary tract infection (disorder)'),
+        # Neurological
+        'cva': ('230690007', 'Cerebrovascular accident (disorder)'),
+        'tia': ('266257000', 'Transient ischemic attack (disorder)'),
+        'sah': ('21454007', 'Subarachnoid hemorrhage (disorder)'),
+        'sdh': ('95453001', 'Subdural hematoma (disorder)'),
+        'edh': ('95452006', 'Epidural hematoma (disorder)'),
+        'ich': ('274100004', 'Intracerebral hemorrhage (disorder)'),
+        'ms': ('24700007', 'Multiple sclerosis (disorder)'),
+        'pd': ('49049000', 'Parkinson disease (disorder)'),
+        'ad': ('26929004', 'Alzheimer disease (disorder)'),
+        'mnd': ('37340000', 'Motor neuron disease (disorder)'),
+        'als': ('86044005', 'Amyotrophic lateral sclerosis (disorder)'),
+        'gbs': ('40956001', 'Guillain-Barre syndrome (disorder)'),
+        # GI
+        'gord': ('235595009', 'Gastroesophageal reflux disease (disorder)'),
+        'gerd': ('235595009', 'Gastroesophageal reflux disease (disorder)'),
+        'ibd': ('24526004', 'Inflammatory bowel disease (disorder)'),
+        'uc': ('64766004', 'Ulcerative colitis (disorder)'),
+        'cd': ('34000006', 'Crohn disease (disorder)'),
+        'ibs': ('10743008', 'Irritable bowel syndrome (disorder)'),
+        'pud': ('13200003', 'Peptic ulcer disease (disorder)'),
+        'gib': ('74474003', 'Gastrointestinal bleeding (disorder)'),
+        'ugib': ('37372002', 'Upper gastrointestinal bleeding (disorder)'),
+        'lgib': ('12063002', 'Lower gastrointestinal bleeding (disorder)'),
+        'sbo': ('81060008', 'Small bowel obstruction (disorder)'),
+        'lbo': ('60756006', 'Large bowel obstruction (disorder)'),
+        # Mental Health
+        'ptsd': ('47505003', 'Posttraumatic stress disorder (disorder)'),
+        'adhd': ('406506008', 'Attention deficit hyperactivity disorder (disorder)'),
+        'ocd': ('191736004', 'Obsessive-compulsive disorder (disorder)'),
+        'gad': ('21897009', 'Generalized anxiety disorder (disorder)'),
+        'mdd': ('36923009', 'Major depressive disorder (disorder)'),
+        'bpd': ('20010003', 'Borderline personality disorder (disorder)'),
+        # Infections
+        'tb': ('56717001', 'Tuberculosis (disorder)'),
+        'hiv': ('86406008', 'Human immunodeficiency virus infection (disorder)'),
+        'mrsa': ('266096002', 'MRSA infection (disorder)'),
+        'vre': ('428763004', 'VRE infection (disorder)'),
+        'cdi': ('186431008', 'Clostridioides difficile infection (disorder)'),
+        # Other
+        'bph': ('266569009', 'Benign prostatic hyperplasia (disorder)'),
+        'pcos': ('69878008', 'Polycystic ovary syndrome (disorder)'),
+        'sle': ('55464009', 'Systemic lupus erythematosus (disorder)'),
+        'pmr': ('49920004', 'Polymyalgia rheumatica (disorder)'),
+        'gca': ('400130008', 'Giant cell arteritis (disorder)'),
+        'ra': ('69896004', 'Rheumatoid arthritis (disorder)'),
+        'oa': ('396275006', 'Osteoarthritis (disorder)'),
+    }
+
     # Extract from treatment/procedure section
     if treatment_section:
         print(f"[TREAT-DEBUG] Treatment section (first 500): {treatment_section[:500]}", file=sys.stderr)
@@ -1643,6 +1764,21 @@ def run_comprehend_medical(text: str) -> dict:
                     all_entities.append(entity)
                     seen_texts.add(proc_name.lower())
                     print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+        # Search for clinical abbreviations (HTN, DM, AF, etc.) in full text
+        for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
+            # Use word boundary to match standalone abbreviations
+            if re.search(rf'\b{re.escape(abbrev)}\b', text, re.IGNORECASE):
+                if abbrev.lower() not in seen_texts:
+                    entity = create_entity(
+                        text=abbrev.upper(), snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.92, category="DIAGNOSIS",
+                        clinical_category="diagnoses", source="abbreviation_dictionary"
+                    )
+                    diagnoses.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(abbrev.lower())
+                    print(f"[EXTRACT] Diagnosis (abbrev): '{abbrev.upper()}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 3: FALLBACK - Use AWS Comprehend on full text if sections yielded nothing
