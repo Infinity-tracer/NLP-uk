@@ -1149,6 +1149,23 @@ def run_comprehend_medical(text: str) -> dict:
         'prochlorperazine': ('372877003', 'Prochlorperazine (substance)'),
         'allopurinol': ('387135004', 'Allopurinol (substance)'),
         'colchicine': ('387413002', 'Colchicine (substance)'),
+        # Ophthalmology medications
+        'tobramycin': ('373548001', 'Tobramycin (substance)'),
+        'tobradex': ('782555005', 'Tobramycin and dexamethasone (product)'),
+        'tobramycin/dexamethasone': ('782555005', 'Tobramycin and dexamethasone (product)'),
+        'tobramycin dexamethasone': ('782555005', 'Tobramycin and dexamethasone (product)'),
+        'chloramphenicol': ('372777009', 'Chloramphenicol (substance)'),
+        'chloramphenicol eye drops': ('372777009', 'Chloramphenicol (substance)'),
+        'latanoprost': ('386926006', 'Latanoprost (substance)'),
+        'timolol': ('372880002', 'Timolol (substance)'),
+        'dorzolamide': ('386988005', 'Dorzolamide (substance)'),
+        'brimonidine': ('372547000', 'Brimonidine (substance)'),
+        'pilocarpine': ('372895002', 'Pilocarpine (substance)'),
+        'atropine': ('372832002', 'Atropine (substance)'),
+        'cyclopentolate': ('372777009', 'Cyclopentolate (substance)'),
+        'tropicamide': ('373531007', 'Tropicamide (substance)'),
+        'artificial tears': ('767113009', 'Artificial tear (product)'),
+        'hypromellose': ('395988009', 'Hypromellose (substance)'),
     }
 
     def lookup_snomed(term: str, client) -> tuple:
@@ -1445,6 +1462,24 @@ def run_comprehend_medical(text: str) -> dict:
         'mindfulness': ('711020003', 'Mindfulness based therapy (regime/therapy)'),
         'dialectical behaviour therapy': ('718026005', 'Dialectical behavior therapy (regime/therapy)'),
         'dbt': ('718026005', 'Dialectical behavior therapy (regime/therapy)'),
+        # Ophthalmology procedures
+        'phacoemulsification': ('415089008', 'Phacoemulsification of lens (procedure)'),
+        'phacoemulsification of lens': ('415089008', 'Phacoemulsification of lens (procedure)'),
+        'cataract surgery': ('54885007', 'Cataract extraction (procedure)'),
+        'cataract extraction': ('54885007', 'Cataract extraction (procedure)'),
+        'lens extraction': ('54885007', 'Cataract extraction (procedure)'),
+        'prosthetic lens insertion': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'insertion of prosthetic lens': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'intraocular lens insertion': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'iol insertion': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'lens implant': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'prosthetic replacement for lens': ('231755001', 'Insertion of prosthetic lens (procedure)'),
+        'laser eye surgery': ('172523009', 'Laser surgery of eye (procedure)'),
+        'trabeculectomy': ('287682000', 'Trabeculectomy (procedure)'),
+        'vitrectomy': ('75732000', 'Vitrectomy (procedure)'),
+        'intravitreal injection': ('418401004', 'Intravitreal injection (procedure)'),
+        'fundoscopy': ('252779009', 'Fundoscopy (procedure)'),
+        'retinal detachment repair': ('231776008', 'Repair of retinal detachment (procedure)'),
     }
 
     # Mental health problems/symptoms SNOMED codes
@@ -1574,6 +1609,18 @@ def run_comprehend_medical(text: str) -> dict:
         'gca': ('400130008', 'Giant cell arteritis (disorder)'),
         'ra': ('69896004', 'Rheumatoid arthritis (disorder)'),
         'oa': ('396275006', 'Osteoarthritis (disorder)'),
+        # Ophthalmology diagnoses/findings
+        'pseudophakia': ('116669003', 'Pseudophakia (finding)'),
+        'cataract': ('193570009', 'Cataract (disorder)'),
+        'glaucoma': ('23986001', 'Glaucoma (disorder)'),
+        'macular degeneration': ('267718000', 'Macular degeneration (disorder)'),
+        'amd': ('267718000', 'Age-related macular degeneration (disorder)'),
+        'diabetic retinopathy': ('4855003', 'Diabetic retinopathy (disorder)'),
+        'retinal detachment': ('42059000', 'Retinal detachment (disorder)'),
+        'conjunctivitis': ('9826008', 'Conjunctivitis (disorder)'),
+        'blepharitis': ('41446000', 'Blepharitis (disorder)'),
+        'dry eye': ('46152009', 'Dry eye syndrome (disorder)'),
+        'keratitis': ('5888003', 'Keratitis (disorder)'),
     }
 
     # Extract from treatment/procedure section
