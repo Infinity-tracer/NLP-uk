@@ -1453,8 +1453,10 @@ def run_comprehend_medical(text: str) -> dict:
         'rectal biopsy': ('309262006', 'Rectal biopsy sample (specimen)'),
         'rectal tissue': ('309200000', 'Tissue specimen from rectum (specimen)'),
         'rectum tissue': ('309200000', 'Tissue specimen from rectum (specimen)'),
+        'rectum': ('309200000', 'Tissue specimen from rectum (specimen)'),  # Table: Source=Rectum, Type=Tissue
         'anal tissue': ('128156008', 'Tissue specimen from anus (specimen)'),
         'anus tissue': ('128156008', 'Tissue specimen from anus (specimen)'),
+        'anus': ('128156008', 'Tissue specimen from anus (specimen)'),  # Table: Source=Anus, Type=Tissue
         'anal biopsy': ('309261004', 'Anal biopsy sample (specimen)'),
         'skin biopsy': ('309063002', 'Skin biopsy sample (specimen)'),
         'colon biopsy': ('309260003', 'Colonic biopsy sample (specimen)'),
@@ -1470,17 +1472,26 @@ def run_comprehend_medical(text: str) -> dict:
         'ecg': ('29303009', 'Electrocardiographic procedure (procedure)'),
     }
 
-    # Extract from investigation/specimen section
-    if investigation_section:
-        print(f"[INV-DEBUG] Investigation section (first 500): {investigation_section[:500]}", file=sys.stderr)
+    # Combine investigation section with treatment section for scope searches
+    # (sigmoidoscopy is both a procedure AND produces investigation specimens)
+    inv_search_text = investigation_section + "\n" + treatment_section if treatment_section else investigation_section
 
-        # First check for known investigations/specimens
+    # Extract from investigation/specimen section
+    if investigation_section or treatment_section:
+        print(f"[INV-DEBUG] Investigation section (first 500): {investigation_section[:500] if investigation_section else 'EMPTY'}", file=sys.stderr)
+
+        # First check for known investigations/specimens in BOTH investigation and treatment sections
         for inv_name, (snomed_code, snomed_desc) in INVESTIGATION_SNOMED.items():
-            if re.search(re.escape(inv_name), investigation_section, re.IGNORECASE):
+            # Skip single-word body parts unless followed by "Tissue" in the text
+            if inv_name in ('rectum', 'anus'):
+                # Check if this is in the specimens table context (Source column)
+                if not re.search(rf'\b{inv_name}\b\s+Tissue', inv_search_text, re.IGNORECASE):
+                    continue
+            if re.search(re.escape(inv_name), inv_search_text, re.IGNORECASE):
                 if inv_name.lower() not in seen_texts:
                     entity = create_entity(
                         text=inv_name, snomed_code=snomed_code, description=snomed_desc,
-                        confidence=0.85, category="INVESTIGATION",
+                        confidence=0.90, category="INVESTIGATION",
                         clinical_category="investigations", source="investigation_section"
                     )
                     investigations.append(entity)
@@ -1497,7 +1508,7 @@ def run_comprehend_medical(text: str) -> dict:
         ]
 
         for pattern in inv_patterns:
-            for match in re.finditer(pattern, investigation_section, re.IGNORECASE):
+            for match in re.finditer(pattern, inv_search_text, re.IGNORECASE):
                 inv_term = match.group(1).strip()
                 if inv_term.lower() in seen_texts or len(inv_term) < 6:
                     continue
@@ -1505,13 +1516,13 @@ def run_comprehend_medical(text: str) -> dict:
                     continue
 
                 snomed_code, snomed_desc, conf = lookup_snomed(inv_term, client)
-                if snomed_code:
+                if snomed_code and conf >= 0.85:  # Apply 85% threshold
                     desc_lower = snomed_desc.lower() if snomed_desc else ""
                     if any(x in desc_lower for x in ['specimen', 'sample', 'biopsy', 'test', 'procedure',
                                                       'imaging', 'scan', 'examination', 'measurement', 'tissue']):
                         entity = create_entity(
                             text=inv_term, snomed_code=snomed_code, description=snomed_desc,
-                            confidence=max(conf, 0.70), category="INVESTIGATION",
+                            confidence=conf, category="INVESTIGATION",
                             clinical_category="investigations", source="investigation_section"
                         )
                         investigations.append(entity)
@@ -2632,7 +2643,7 @@ def compute_unified_confidence(
 
 # ── Confidence Scoring System ─────────────────────────────────────────────────
 # Default entity confidence threshold (40%) - entities below this are hidden
-DEFAULT_ENTITY_THRESHOLD = 0.40
+DEFAULT_ENTITY_THRESHOLD = 0.85  # Minimum 85% confidence for SNOMED entities
 
 # Minimum displayable confidence - entities at or below 1% are never shown
 MIN_DISPLAYABLE_CONFIDENCE = 0.02
