@@ -1379,8 +1379,9 @@ def run_comprehend_medical(text: str) -> dict:
                     print(f"[EXTRACT] Medication: '{med_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ── TREATMENT EXTRACTOR ──
-    # Common procedure SNOMED codes
+    # Common procedure SNOMED codes (physical + mental health)
     PROCEDURE_SNOMED = {
+        # Physical procedures
         'flexible sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
         'sigmoidoscopy': ('44441009', 'Flexible fiberoptic sigmoidoscopy (procedure)'),
         'colonoscopy': ('73761001', 'Colonoscopy (procedure)'),
@@ -1402,6 +1403,56 @@ def run_comprehend_medical(text: str) -> dict:
         'appendicectomy': ('80146002', 'Appendectomy (procedure)'),
         'cholecystectomy': ('38102005', 'Cholecystectomy (procedure)'),
         'hernia repair': ('44946007', 'Herniorrhaphy (procedure)'),
+        # Mental health treatments/therapies
+        'cbt': ('228557008', 'Cognitive behavioral therapy (regime/therapy)'),
+        'cognitive behavioural therapy': ('228557008', 'Cognitive behavioral therapy (regime/therapy)'),
+        'cognitive behavioral therapy': ('228557008', 'Cognitive behavioral therapy (regime/therapy)'),
+        'psychological therapy': ('75516001', 'Psychotherapy (regime/therapy)'),
+        'psychotherapy': ('75516001', 'Psychotherapy (regime/therapy)'),
+        'brief psychosocial intervention': ('225347005', 'Brief intervention (regime/therapy)'),
+        'psychosocial intervention': ('225347005', 'Brief intervention (regime/therapy)'),
+        'psychoeducation': ('311401005', 'Psychoeducation (procedure)'),
+        'emdr': ('426928008', 'Eye movement desensitization reprocessing therapy (regime/therapy)'),
+        'eye movement desensitization': ('426928008', 'Eye movement desensitization reprocessing therapy (regime/therapy)'),
+        'counselling': ('409063005', 'Counseling (procedure)'),
+        'counseling': ('409063005', 'Counseling (procedure)'),
+        'individual therapy': ('75516001', 'Psychotherapy (regime/therapy)'),
+        'group therapy': ('76168009', 'Group psychotherapy (regime/therapy)'),
+        'family therapy': ('63333002', 'Family therapy (regime/therapy)'),
+        'trauma therapy': ('710824005', 'Trauma-focused cognitive behavioral therapy (regime/therapy)'),
+        'exposure therapy': ('699295002', 'Exposure therapy (regime/therapy)'),
+        'mindfulness': ('711020003', 'Mindfulness based therapy (regime/therapy)'),
+        'dialectical behaviour therapy': ('718026005', 'Dialectical behavior therapy (regime/therapy)'),
+        'dbt': ('718026005', 'Dialectical behavior therapy (regime/therapy)'),
+    }
+
+    # Mental health problems/symptoms SNOMED codes
+    MENTAL_HEALTH_SNOMED = {
+        'dissociation': ('44376007', 'Dissociative disorder (disorder)'),
+        'dissociative': ('44376007', 'Dissociative disorder (disorder)'),
+        'anxiety': ('48694002', 'Anxiety (finding)'),
+        'depression': ('35489007', 'Depressive disorder (disorder)'),
+        'visual disturbance': ('63102001', 'Visual disturbance (finding)'),
+        'hypervigilance': ('247754004', 'Hypervigilance (finding)'),
+        'trauma': ('127295002', 'Traumatic event (event)'),
+        'ptsd': ('47505003', 'Posttraumatic stress disorder (disorder)'),
+        'post-traumatic stress': ('47505003', 'Posttraumatic stress disorder (disorder)'),
+        'adhd': ('406506008', 'Attention deficit hyperactivity disorder (disorder)'),
+        'attention deficit': ('406506008', 'Attention deficit hyperactivity disorder (disorder)'),
+        'panic': ('371631005', 'Panic disorder (disorder)'),
+        'ocd': ('191736004', 'Obsessive-compulsive disorder (disorder)'),
+        'obsessive': ('191736004', 'Obsessive-compulsive disorder (disorder)'),
+        'insomnia': ('193462001', 'Insomnia (disorder)'),
+        'low mood': ('366979004', 'Depressed mood (finding)'),
+        'mood disturbance': ('46206005', 'Mood disorder (disorder)'),
+        'self-harm': ('248062006', 'Self-injurious behavior (finding)'),
+        'suicidal ideation': ('6471006', 'Suicidal ideation (finding)'),
+        'eating disorder': ('72366004', 'Eating disorder (disorder)'),
+        'anorexia': ('56882008', 'Anorexia nervosa (disorder)'),
+        'bulimia': ('78004001', 'Bulimia nervosa (disorder)'),
+        'phobia': ('386810004', 'Phobic disorder (disorder)'),
+        'social anxiety': ('25501002', 'Social phobia (disorder)'),
+        'agoraphobia': ('386810004', 'Agoraphobia (disorder)'),
     }
 
     # Extract from treatment/procedure section
@@ -1555,6 +1606,43 @@ def run_comprehend_medical(text: str) -> dict:
                     all_entities.append(entity)
                     seen_texts.add(prob_term.lower())
                     print(f"[EXTRACT] Problem: '{prob_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STEP 2.5: FULL-TEXT DICTIONARY SEARCH (for narrative documents)
+    # Search for known clinical terms in full text when sections don't work
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # If no section-based extractions found, search full text for known terms
+    if not all_entities or (not treatments and not problems):
+        print("[FULLTEXT] Searching full text for known clinical terms...", file=sys.stderr)
+
+        # Search for mental health problems/symptoms
+        for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
+            if re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE):
+                if term.lower() not in seen_texts:
+                    entity = create_entity(
+                        text=term, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.90, category="PROBLEM",
+                        clinical_category="problems", source="fulltext_dictionary"
+                    )
+                    problems.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(term.lower())
+                    print(f"[EXTRACT] Problem (fulltext): '{term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+        # Search for treatments/therapies in full text
+        for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
+            if re.search(rf'\b{re.escape(proc_name)}\b', text, re.IGNORECASE):
+                if proc_name.lower() not in seen_texts:
+                    entity = create_entity(
+                        text=proc_name, snomed_code=snomed_code, description=snomed_desc,
+                        confidence=0.90, category="TREATMENT",
+                        clinical_category="treatments", source="fulltext_dictionary"
+                    )
+                    treatments.append(entity)
+                    all_entities.append(entity)
+                    seen_texts.add(proc_name.lower())
+                    print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 3: FALLBACK - Use AWS Comprehend on full text if sections yielded nothing
