@@ -2471,6 +2471,112 @@ def run_comprehend_medical(text: str) -> dict:
     }
 
 
+def _expand_abbreviations_in_summary(summary_text: str) -> str:
+    """Expand clinical abbreviations in summary text for readability.
+
+    Format: "abbreviation (Full Form)" to preserve both forms.
+    Only expands abbreviations that appear as standalone terms.
+    """
+    if not summary_text or not _HAS_ABBREVIATION_RESOLVER:
+        return summary_text
+
+    import re as _re
+
+    # Common clinical abbreviations to expand in summaries
+    # Format: abbreviation -> (full form, should_expand)
+    SUMMARY_ABBREVIATIONS = {
+        # Timing/Dosing (very common in Rx lines)
+        'qds': ('four times daily', True),
+        'tds': ('three times daily', True),
+        'bd': ('twice daily', True),
+        'od': ('once daily', True),
+        'prn': ('as required', True),
+        'stat': ('immediately', True),
+        'mane': ('in the morning', True),
+        'nocte': ('at night', True),
+        'ac': ('before meals', True),
+        'pc': ('after meals', True),
+        # Routes
+        'po': ('by mouth', True),
+        'pr': ('per rectum', True),
+        'im': ('intramuscular', True),
+        'iv': ('intravenous', True),
+        'sc': ('subcutaneous', True),
+        'sl': ('sublingual', True),
+        'top': ('topical', True),
+        'inh': ('inhaled', True),
+        'neb': ('nebulised', True),
+        # Summary structure
+        'dx': ('Diagnosis', True),
+        'rx': ('Prescription', True),
+        'f/u': ('Follow-up', True),
+        'ix': ('Investigations', True),
+        'mx': ('Management', True),
+        'hx': ('History', True),
+        'tx': ('Treatment', True),
+        # Common conditions
+        'htn': ('Hypertension', True),
+        'dm': ('Diabetes Mellitus', True),
+        't2dm': ('Type 2 Diabetes', True),
+        't1dm': ('Type 1 Diabetes', True),
+        'af': ('Atrial Fibrillation', True),
+        'copd': ('COPD', False),  # Already well-known
+        'ckd': ('Chronic Kidney Disease', True),
+        'uti': ('Urinary Tract Infection', True),
+        'dvt': ('Deep Vein Thrombosis', True),
+        'pe': ('Pulmonary Embolism', True),
+        'mi': ('Myocardial Infarction', True),
+        'cva': ('Stroke', True),
+        'tia': ('Transient Ischaemic Attack', True),
+        'sob': ('Shortness of Breath', True),
+        'nkda': ('No Known Drug Allergies', True),
+        # Investigations
+        'fbc': ('Full Blood Count', True),
+        'u&e': ('Urea & Electrolytes', True),
+        'lft': ('Liver Function Tests', True),
+        'tft': ('Thyroid Function Tests', True),
+        'crp': ('C-Reactive Protein', True),
+        'ecg': ('ECG', False),  # Well-known
+        'cxr': ('Chest X-Ray', True),
+        'ct': ('CT Scan', True),
+        'mri': ('MRI Scan', True),
+        # Procedures
+        'ogd': ('Upper GI Endoscopy', True),
+        'ercp': ('ERCP', False),  # Technical term
+        'cabg': ('Coronary Bypass', True),
+        'pci': ('Coronary Intervention', True),
+    }
+
+    result = summary_text
+
+    for abbrev, (full_form, should_expand) in SUMMARY_ABBREVIATIONS.items():
+        if not should_expand:
+            continue
+        # Match whole word only (case-insensitive), preserve case of first letter
+        pattern = rf'\b({_re.escape(abbrev)})\b'
+        matches = list(_re.finditer(pattern, result, _re.IGNORECASE))
+
+        # Process matches in reverse order to preserve positions
+        for match in reversed(matches):
+            original = match.group(1)
+            start, end = match.start(), match.end()
+
+            # Check if already expanded (has parentheses after)
+            if end < len(result) and result[end:end+2] == ' (':
+                continue
+
+            # Create expansion: "QDS" -> "QDS (four times daily)"
+            # For structure abbreviations like Dx, Rx, keep capitalized
+            if abbrev.lower() in ('dx', 'rx', 'f/u', 'ix', 'mx', 'hx', 'tx'):
+                expanded = f"{original} ({full_form})"
+            else:
+                expanded = f"{original} ({full_form})"
+
+            result = result[:start] + expanded + result[end:]
+
+    return result
+
+
 def _rewrite_summary_without_age(summary_text: str, patient_sex: str = "") -> str:
     """Remove demographics/identifiers from summary and keep concise clinical content."""
     import re as _re
@@ -2754,9 +2860,13 @@ Extracted clinical entities:
         fut_pharmacist= pool.submit(call_claude, pharmacist_prompt)
         fut_actions   = pool.submit(call_claude, actions_prompt, 400)
 
-        clinician_summary  = _rewrite_summary_without_age(fut_clin.result(), patient_sex)
-        patient_summary    = _rewrite_summary_without_age(fut_patient.result(), patient_sex)
-        pharmacist_summary = fut_pharmacist.result()
+        clinician_summary  = _expand_abbreviations_in_summary(
+            _rewrite_summary_without_age(fut_clin.result(), patient_sex)
+        )
+        patient_summary    = _expand_abbreviations_in_summary(
+            _rewrite_summary_without_age(fut_patient.result(), patient_sex)
+        )
+        pharmacist_summary = _expand_abbreviations_in_summary(fut_pharmacist.result())
         actions_raw        = fut_actions.result()
 
     # Parse structured actions JSON from Claude's raw response
