@@ -1019,7 +1019,9 @@ def run_comprehend_medical(text: str) -> dict:
                 # Find end - next section header or end of text
                 end = len(text)
                 for stop in stop_headers + ['diagnosis', 'medication', 'procedure', 'investigation',
-                                            'assessment', 'plan', 'follow', 'advice', 'action']:
+                                            'assessment', 'plan', 'follow', 'advice', 'action',
+                                            'management', 'summary', 'impression', 'conclusion',
+                                            'dear doctor', 'yours sincerely', 'cc:']:
                     stop_pattern = rf'\n\s*{re.escape(stop)}[:\s]*(?:\n|$)'
                     stop_match = re.search(stop_pattern, text_lower[start:], re.IGNORECASE)
                     if stop_match:
@@ -1951,13 +1953,42 @@ def run_comprehend_medical(text: str) -> dict:
                 seen_texts.add(proc_name.lower())
                 print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-    # Search for clinical abbreviations (HTN, DM, AF, etc.) in full text
+    # Search for medications in full text
+    for med_name, (snomed_code, snomed_desc) in MEDICATION_SNOMED.items():
+        if re.search(rf'\b{re.escape(med_name)}\b', text, re.IGNORECASE):
+            if med_name.lower() not in seen_texts:
+                entity = create_entity(
+                    text=med_name, snomed_code=snomed_code, description=snomed_desc,
+                    confidence=0.90, category="MEDICATION",
+                    clinical_category="medications", source="fulltext_dictionary"
+                )
+                medications.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(med_name.lower())
+                print(f"[EXTRACT] Medication (fulltext): '{med_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # Search for investigations in full text
+    for inv_name, (snomed_code, snomed_desc) in INVESTIGATION_SNOMED.items():
+        if re.search(rf'\b{re.escape(inv_name)}\b', text, re.IGNORECASE):
+            if inv_name.lower() not in seen_texts:
+                entity = create_entity(
+                    text=inv_name, snomed_code=snomed_code, description=snomed_desc,
+                    confidence=0.88, category="INVESTIGATION",
+                    clinical_category="investigations", source="fulltext_dictionary"
+                )
+                investigations.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(inv_name.lower())
+                print(f"[EXTRACT] Investigation (fulltext): '{inv_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+    # Search for clinical abbreviations and conditions (HTN, DM, AF, Crohn's, etc.) in full text
     for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
-        # Use word boundary to match standalone abbreviations
-        if re.search(rf'\b{re.escape(abbrev)}\b', text, re.IGNORECASE):
+        # Handle apostrophes in terms like "crohn's disease"
+        search_pattern = abbrev.replace("'", "['’]?")  # Match ' or ' or missing
+        if re.search(rf'\b{search_pattern}\b', text, re.IGNORECASE):
             if abbrev.lower() not in seen_texts:
                 entity = create_entity(
-                    text=abbrev.upper(), snomed_code=snomed_code, description=snomed_desc,
+                    text=abbrev, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.92, category="DIAGNOSIS",
                     clinical_category="diagnoses", source="abbreviation_dictionary"
                 )
