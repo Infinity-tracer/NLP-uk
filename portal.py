@@ -2302,28 +2302,23 @@ def run_comprehend_medical(text: str) -> dict:
                             # Check for negation words before entity in this line
                             # Include common OCR errors and comprehensive negation patterns
                             negation_words = [
-                                # Core negation words
+                                # Core negation words (whole words only - matched with word boundaries)
                                 'nil', 'no', 'not', 'none', 'never', 'neither',
                                 'denies', 'denied', 'denying', 'deny',
                                 'without', 'absent', 'negative', 'lacks', 'lacking',
                                 'ruled out', 'rules out', 'excludes', 'excluded',
                                 'no evidence of', 'no history of', 'no signs of',
                                 'no symptoms of', 'not consistent with',
-                                # OCR error variants of "nil"
-                                'ni', 'nj', 'n1', 'nii', 'nll', 'nil1', 'n11',
-                                # OCR error variants of "no"
-                                'n0', 'na',
-                                # OCR error variants of "none"
-                                'n0ne', 'nane',
-                                # OCR error variants of "denies"
-                                'deni3s', 'denis', 'demes',
                                 # Clinical negation phrases
-                                'unremarkable', 'normal', 'clear', 'negative for',
+                                'unremarkable', 'negative for',
+                                # Note: Removed OCR variants (ni, nj, n1, etc.) - too many false positives
+                                # The line-start check below handles "Nil X" patterns specifically
                             ]
 
                             for neg_word in negation_words:
-                                # Direct check: does text_before contain the negation word?
-                                if neg_word in text_before:
+                                # Use word boundary matching to avoid false positives like "clinic" matching "ni"
+                                # Must match whole word, not substring
+                                if re.search(rf'\b{re.escape(neg_word)}\b', text_before):
                                     is_negated = True
                                     negation_reason = f"'{neg_word}' in '{text_before}' before '{entity_text}'"
                                     print(f"[NEGATION] MATCH! '{neg_word}' found in text_before", file=sys.stderr)
@@ -2359,20 +2354,30 @@ def run_comprehend_medical(text: str) -> dict:
                     if not is_negated:
                         entity_match = re.search(re.escape(entity_text), text.lower())
                         if entity_match:
-                            text_before_entity = text[:entity_match.start()].lower()
-                            words_before = text_before_entity.split()[-15:]  # Last 15 words
+                            # Find the sentence/line containing this entity
+                            # Split on newlines and sentence boundaries to avoid cross-sentence negation
+                            entity_pos = entity_match.start()
+                            # Find start of current line/sentence (look back for newline or period)
+                            line_start = max(
+                                text.lower().rfind('\n', 0, entity_pos) + 1,
+                                text.lower().rfind('. ', 0, entity_pos) + 2,
+                                0
+                            )
+                            text_before_entity = text[line_start:entity_pos].lower()
+                            words_before = text_before_entity.split()[-10:]  # Last 10 words in same sentence
                             window_negations = {'no', 'nil', 'not', 'without', 'denies', 'denied',
-                                                'never', 'none', 'absent', 'negative', 'neither',
-                                                'ni', 'nj', 'n1'}  # Include OCR variants
+                                                'never', 'none', 'absent', 'negative', 'neither'}
+                            # Don't include OCR variants here - too prone to false positives
                             for i, word in enumerate(words_before):
                                 if word in window_negations:
                                     # Check it's not a false positive like "no longer" or "not only"
                                     context_after = ' '.join(words_before[i+1:i+3]) if i+1 < len(words_before) else ''
                                     false_positive_contexts = ['longer', 'only', 'change', 'increase',
-                                                               'further', 'more', 'less', 'difficulty']
+                                                               'further', 'more', 'less', 'difficulty',
+                                                               'urgent']  # "no urgent treatment" doesn't negate "stone clinic"
                                     if not any(fp in context_after for fp in false_positive_contexts):
                                         is_negated = True
-                                        negation_reason = f"Window negation: '{word}' within 15 words of '{entity_text}'"
+                                        negation_reason = f"Window negation: '{word}' within 10 words of '{entity_text}'"
                                         print(f"[NEGATION] MATCH! Window-based: '{word}' before entity", file=sys.stderr)
                                         break
 
