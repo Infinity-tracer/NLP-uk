@@ -6611,7 +6611,7 @@ def run_full_pipeline(doc_id: str, upload_path: Path) -> dict:
                 "note": "temporal_reasoner module unavailable",
             }
     except Exception as e:
-        snomed = {"entities": [], "problems": [], "medications": [], "diagnoses": [], "snomed_confidence": 0.3, "negated_entities": [], "temporal_stats": {}}
+        snomed = {"entities": [], "problems": [], "treatments": [], "medications": [], "investigations": [], "diagnoses": [], "snomed_confidence": 0.3, "negated_entities": [], "temporal_stats": {}, "all_entities": [], "used_fallback": False, "top3_fallback": []}
         result["pipeline_stages"]["track_a"] = {"status": "partial", "error": str(e)}
         result["pipeline_stages"]["negation_detection"] = {"status": "skipped", "error": str(e)}
         result["pipeline_stages"]["temporal_reasoning"] = {"status": "skipped", "error": str(e)}
