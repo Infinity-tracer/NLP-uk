@@ -2374,6 +2374,45 @@ def run_comprehend_medical(text: str) -> dict:
             treatments, neg_treat = filter_negated(treatments, text)
             negated_entities.extend(neg_treat)
 
+            # ── CLINIC/DEPARTMENT CONTEXT FILTER ──
+            # Remove entities that appear in clinic/department/supervisor context
+            # e.g. "Supervisor: Mr Wardak for erectile dysfunction clinic" should not extract ED
+            def filter_clinic_context(entities: list, full_text: str) -> list:
+                """Remove entities found in clinic/department/supervisor/signature context."""
+                import re
+                filtered = []
+                text_lower = full_text.lower()
+
+                # Patterns that indicate clinic/department names (not patient conditions)
+                clinic_context_patterns = [
+                    r'(?:supervisor|department|clinic|unit|service|ward|team)\s*(?:for|of|:)\s*[^.]*?\b{entity}\b',
+                    r'\b{entity}\s+clinic\b',
+                    r'\b{entity}\s+department\b',
+                    r'\b{entity}\s+service\b',
+                    r'\b{entity}\s+unit\b',
+                    r'(?:yours\s+sincerely|electronically\s+signed|kind\s+regards)[\s\S]*\b{entity}\b',
+                ]
+
+                for entity in entities:
+                    entity_text = entity.get("text", "").lower()
+                    is_clinic_context = False
+
+                    for pattern_template in clinic_context_patterns:
+                        pattern = pattern_template.format(entity=re.escape(entity_text))
+                        if re.search(pattern, text_lower, re.IGNORECASE):
+                            is_clinic_context = True
+                            print(f"[CLINIC-FILTER] EXCLUDED: '{entity.get('text')}' - Found in clinic/department context", file=sys.stderr)
+                            break
+
+                    if not is_clinic_context:
+                        filtered.append(entity)
+
+                return filtered
+
+            # Apply clinic context filter to diagnoses
+            diagnoses = filter_clinic_context(diagnoses, text)
+            problems = filter_clinic_context(problems, text)
+
             # Filter medications that are actually allergies or procedural agents (not prescriptions)
             def filter_medication_context(meds: list, text: str) -> list:
                 """Remove medications that appear in allergy context or are procedural agents."""
