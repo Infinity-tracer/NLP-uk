@@ -964,6 +964,43 @@ def run_comprehend_medical(text: str) -> dict:
     temporal_stats = {"current": 0, "historical": 0, "resolved": 0, "suspected": 0, "chronic": 0, "acute": 0}
 
     # ═══════════════════════════════════════════════════════════════════════════════
+    # STEP 0: SIGNATURE/FOOTER FILTERING
+    # Remove signature blocks to prevent extracting clinic names as diagnoses
+    # e.g. "Supervisor: Mr Wardak for erectile dysfunction clinic" should not extract ED
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    def remove_signature_section(text: str) -> str:
+        """Remove signature/footer section from clinical document text."""
+        # Find signature markers and remove everything after
+        signature_markers = [
+            r'(?i)\byours\s+(sincerely|faithfully)\b',
+            r'(?i)\belectronically\s+signed\b',
+            r'(?i)\bkind\s+regards\b',
+            r'(?i)\bbest\s+(wishes|regards)\b',
+            r'(?i)\bsigned\s*:\s*',
+            r'(?i)\bcc\s*:\s*[A-Z]',  # CC: followed by name
+            r'(?i)\bsupervisor\s*:\s*',
+            r'(?i)\bcopy\s+to\s*:',
+        ]
+
+        text_clean = text
+        earliest_cut = len(text)
+
+        for marker in signature_markers:
+            match = re.search(marker, text)
+            if match:
+                earliest_cut = min(earliest_cut, match.start())
+
+        if earliest_cut < len(text):
+            text_clean = text[:earliest_cut]
+            print(f"[SIGNATURE] Removed signature section at position {earliest_cut}", file=sys.stderr)
+
+        return text_clean
+
+    # Remove signature section before processing
+    text = remove_signature_section(text)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 1: SECTION DETECTION
     # Identify and extract content from specific document sections
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -1166,6 +1203,16 @@ def run_comprehend_medical(text: str) -> dict:
         'tropicamide': ('373531007', 'Tropicamide (substance)'),
         'artificial tears': ('767113009', 'Artificial tear (product)'),
         'hypromellose': ('395988009', 'Hypromellose (substance)'),
+        # Urology medications
+        'tamsulosin': ('372509005', 'Tamsulosin (substance)'),
+        'alfuzosin': ('386929007', 'Alfuzosin (substance)'),
+        'finasteride': ('386965004', 'Finasteride (substance)'),
+        'dutasteride': ('407030007', 'Dutasteride (substance)'),
+        'solifenacin': ('407049002', 'Solifenacin (substance)'),
+        'tolterodine': ('372713003', 'Tolterodine (substance)'),
+        'mirabegron': ('703801001', 'Mirabegron (substance)'),
+        'potassium citrate': ('387408005', 'Potassium citrate (substance)'),
+        'allopurinol': ('387135004', 'Allopurinol (substance)'),
     }
 
     def lookup_snomed(term: str, client) -> tuple:
@@ -1328,6 +1375,7 @@ def run_comprehend_medical(text: str) -> dict:
                     print(f"[EXTRACT] Diagnosis: '{diag_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
         # Also extract plain text diagnoses (no ICD code)
+        # Pattern 1: Bulleted items (existing)
         plain_pattern = r'(?:^|\n)\s*[\*\-•]\s*([A-Za-z][^\n\[\(]{3,50})\s*(?:\n|$)'
         for match in re.finditer(plain_pattern, diagnosis_section):
             diag_term = match.group(1).strip()
@@ -1348,6 +1396,32 @@ def run_comprehend_medical(text: str) -> dict:
                 diagnoses.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(diag_term.lower())
+
+        # Pattern 2: Plain text lines (e.g. "6 mm left VUJ ureteric stone")
+        # Each line in diagnosis section that looks clinical
+        for line in diagnosis_section.split('\n'):
+            line = line.strip()
+            if not line or len(line) < 5:
+                continue
+            # Skip lines that are date references or parentheticals
+            if re.match(r'^\(', line) or re.match(r'^\d{1,2}[/\-]', line):
+                continue
+            # Extract urology stone patterns: "X mm [location] [type] stone"
+            stone_match = re.search(r'(\d+\s*mm\s+(?:left|right)?\s*(?:vuj|ureteric|renal|kidney|upper pole|lower pole)?\s*(?:ureteric|renal|kidney)?\s*(?:stone|calculus))', line, re.IGNORECASE)
+            if stone_match:
+                stone_term = stone_match.group(1).strip()
+                if stone_term.lower() not in seen_texts:
+                    snomed_code, snomed_desc, conf = lookup_snomed(stone_term, client)
+                    if snomed_code:
+                        entity = create_entity(
+                            text=stone_term, snomed_code=snomed_code, description=snomed_desc,
+                            confidence=max(conf, 0.88), category="DIAGNOSIS", clinical_category="diagnoses",
+                            source="diagnosis_section_plaintext"
+                        )
+                        diagnoses.append(entity)
+                        all_entities.append(entity)
+                        seen_texts.add(stone_term.lower())
+                        print(f"[EXTRACT] Diagnosis (plaintext stone): '{stone_term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ── MEDICATION EXTRACTOR ──
     # Extract from medication section
@@ -1480,6 +1554,15 @@ def run_comprehend_medical(text: str) -> dict:
         'intravitreal injection': ('418401004', 'Intravitreal injection (procedure)'),
         'fundoscopy': ('252779009', 'Fundoscopy (procedure)'),
         'retinal detachment repair': ('231776008', 'Repair of retinal detachment (procedure)'),
+        # Urology procedures
+        'dissolution therapy': ('91602002', 'Dissolution therapy (procedure)'),
+        'lithotripsy': ('133945002', 'Lithotripsy (procedure)'),
+        'ureteroscopy': ('67688003', 'Ureteroscopy (procedure)'),
+        'cystoscopy': ('48615003', 'Cystoscopy (procedure)'),
+        'stone clinic': ('385763009', 'Renal stone clinic (procedure)'),
+        'routine stone clinic': ('385763009', 'Renal stone clinic (procedure)'),
+        'pcnl': ('236988002', 'Percutaneous nephrolithotomy (procedure)'),
+        'eswl': ('133945002', 'Extracorporeal shock wave lithotripsy (procedure)'),
     }
 
     # Mental health problems/symptoms SNOMED codes
@@ -1609,6 +1692,34 @@ def run_comprehend_medical(text: str) -> dict:
         'gca': ('400130008', 'Giant cell arteritis (disorder)'),
         'ra': ('69896004', 'Rheumatoid arthritis (disorder)'),
         'oa': ('396275006', 'Osteoarthritis (disorder)'),
+        # Urology diagnoses
+        'ureteric stone': ('95570007', 'Ureteric stone (disorder)'),
+        'ureteral stone': ('95570007', 'Ureteric stone (disorder)'),
+        'renal stone': ('95566004', 'Renal stone (disorder)'),
+        'kidney stone': ('95566004', 'Renal stone (disorder)'),
+        'nephrolithiasis': ('95566004', 'Nephrolithiasis (disorder)'),
+        'urolithiasis': ('34482003', 'Urolithiasis (disorder)'),
+        'renal calculus': ('95566004', 'Renal calculus (disorder)'),
+        'ureteric calculus': ('95570007', 'Ureteric calculus (disorder)'),
+        'left vuj ureteric stone': ('95570007', 'Left ureteric stone (disorder)'),
+        'left upper pole renal stone': ('95566004', 'Left renal stone (disorder)'),
+        'right upper pole renal stone': ('95566004', 'Right renal stone (disorder)'),
+        'vuj stone': ('95570007', 'Vesicoureteric junction stone (disorder)'),
+        'hydronephrosis': ('43064006', 'Hydronephrosis (disorder)'),
+        'hematuria': ('53298000', 'Hematuria (finding)'),
+        'haematuria': ('53298000', 'Haematuria (finding)'),
+        'erectile dysfunction': ('860914002', 'Erectile dysfunction (disorder)'),
+        'high cholesterol': ('13644009', 'Hyperlipidemia (disorder)'),
+        'hyperlipidemia': ('13644009', 'Hyperlipidemia (disorder)'),
+        'hyperlipidaemia': ('13644009', 'Hyperlipidaemia (disorder)'),
+        'raised blood pressure': ('38341003', 'Hypertension (disorder)'),
+        'hypertension': ('38341003', 'Hypertension (disorder)'),
+        "crohn's disease": ('34000006', "Crohn's disease (disorder)"),
+        'crohn disease': ('34000006', "Crohn's disease (disorder)"),
+        'crohns disease': ('34000006', "Crohn's disease (disorder)"),
+        'flank pain': ('102614006', 'Flank pain (finding)'),
+        'flank discomfort': ('102614006', 'Flank pain (finding)'),
+        'left flank discomfort': ('102614006', 'Left flank pain (finding)'),
         # Ophthalmology diagnoses/findings
         'pseudophakia': ('116669003', 'Pseudophakia (finding)'),
         'cataract': ('193570009', 'Cataract (disorder)'),
@@ -1684,11 +1795,25 @@ def run_comprehend_medical(text: str) -> dict:
         'colonoscopy': ('73761001', 'Colonoscopy (procedure)'),
         'histology': ('117678005', 'Histopathology (procedure)'),
         'blood test': ('396550006', 'Blood test (procedure)'),
+        'blood tests': ('396550006', 'Blood test (procedure)'),
+        'repeat blood tests': ('396550006', 'Blood test (procedure)'),
         'ct scan': ('77477000', 'Computed tomography (procedure)'),
         'mri scan': ('113091000', 'Magnetic resonance imaging (procedure)'),
         'x-ray': ('363680008', 'X-ray (procedure)'),
         'ultrasound': ('16310003', 'Ultrasonography (procedure)'),
         'ecg': ('29303009', 'Electrocardiographic procedure (procedure)'),
+        # Urology investigations
+        'stone analysis': ('365788005', 'Finding of stone composition (finding)'),
+        'kidney function': ('80274001', 'Kidney function test (procedure)'),
+        'kidney function test': ('80274001', 'Kidney function test (procedure)'),
+        'renal function': ('80274001', 'Kidney function test (procedure)'),
+        'adjusted calcium level': ('269698009', 'Corrected calcium level (procedure)'),
+        'adjusted calcium': ('269698009', 'Corrected calcium level (procedure)'),
+        'calcium level': ('269698009', 'Serum calcium level (procedure)'),
+        '24 hour urine collection': ('252454005', '24-hour urine collection (procedure)'),
+        'urine analysis': ('27171005', 'Urinalysis (procedure)'),
+        'urine culture': ('252398009', 'Urine culture (procedure)'),
+        'kub xray': ('168690008', 'Radiography of kidney, ureter and bladder (procedure)'),
     }
 
     # Combine investigation section with treatment section for scope searches
@@ -1777,55 +1902,55 @@ def run_comprehend_medical(text: str) -> dict:
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 2.5: FULL-TEXT DICTIONARY SEARCH (for narrative documents)
-    # Search for known clinical terms in full text when sections don't work
+    # Search for known clinical terms in full text
+    # Always run to catch conditions mentioned in summary/narrative sections
     # ═══════════════════════════════════════════════════════════════════════════════
 
-    # If no section-based extractions found, search full text for known terms
-    if not all_entities or (not treatments and not problems):
-        print("[FULLTEXT] Searching full text for known clinical terms...", file=sys.stderr)
+    # Always search full text for known terms (catches conditions in SUMMARY section)
+    print("[FULLTEXT] Searching full text for known clinical terms...", file=sys.stderr)
 
-        # Search for mental health problems/symptoms
-        for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
-            if re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE):
-                if term.lower() not in seen_texts:
-                    entity = create_entity(
-                        text=term, snomed_code=snomed_code, description=snomed_desc,
-                        confidence=0.90, category="PROBLEM",
-                        clinical_category="problems", source="fulltext_dictionary"
-                    )
-                    problems.append(entity)
-                    all_entities.append(entity)
-                    seen_texts.add(term.lower())
-                    print(f"[EXTRACT] Problem (fulltext): '{term}' -> SNOMED {snomed_code}", file=sys.stderr)
+    # Search for mental health problems/symptoms
+    for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
+        if re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE):
+            if term.lower() not in seen_texts:
+                entity = create_entity(
+                    text=term, snomed_code=snomed_code, description=snomed_desc,
+                    confidence=0.90, category="PROBLEM",
+                    clinical_category="problems", source="fulltext_dictionary"
+                )
+                problems.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(term.lower())
+                print(f"[EXTRACT] Problem (fulltext): '{term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-        # Search for treatments/therapies in full text
-        for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
-            if re.search(rf'\b{re.escape(proc_name)}\b', text, re.IGNORECASE):
-                if proc_name.lower() not in seen_texts:
-                    entity = create_entity(
-                        text=proc_name, snomed_code=snomed_code, description=snomed_desc,
-                        confidence=0.90, category="TREATMENT",
-                        clinical_category="treatments", source="fulltext_dictionary"
-                    )
-                    treatments.append(entity)
-                    all_entities.append(entity)
-                    seen_texts.add(proc_name.lower())
-                    print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+    # Search for treatments/therapies in full text
+    for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
+        if re.search(rf'\b{re.escape(proc_name)}\b', text, re.IGNORECASE):
+            if proc_name.lower() not in seen_texts:
+                entity = create_entity(
+                    text=proc_name, snomed_code=snomed_code, description=snomed_desc,
+                    confidence=0.90, category="TREATMENT",
+                    clinical_category="treatments", source="fulltext_dictionary"
+                )
+                treatments.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(proc_name.lower())
+                print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-        # Search for clinical abbreviations (HTN, DM, AF, etc.) in full text
-        for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
-            # Use word boundary to match standalone abbreviations
-            if re.search(rf'\b{re.escape(abbrev)}\b', text, re.IGNORECASE):
-                if abbrev.lower() not in seen_texts:
-                    entity = create_entity(
-                        text=abbrev.upper(), snomed_code=snomed_code, description=snomed_desc,
-                        confidence=0.92, category="DIAGNOSIS",
-                        clinical_category="diagnoses", source="abbreviation_dictionary"
-                    )
-                    diagnoses.append(entity)
-                    all_entities.append(entity)
-                    seen_texts.add(abbrev.lower())
-                    print(f"[EXTRACT] Diagnosis (abbrev): '{abbrev.upper()}' -> SNOMED {snomed_code}", file=sys.stderr)
+    # Search for clinical abbreviations (HTN, DM, AF, etc.) in full text
+    for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
+        # Use word boundary to match standalone abbreviations
+        if re.search(rf'\b{re.escape(abbrev)}\b', text, re.IGNORECASE):
+            if abbrev.lower() not in seen_texts:
+                entity = create_entity(
+                    text=abbrev.upper(), snomed_code=snomed_code, description=snomed_desc,
+                    confidence=0.92, category="DIAGNOSIS",
+                    clinical_category="diagnoses", source="abbreviation_dictionary"
+                )
+                diagnoses.append(entity)
+                all_entities.append(entity)
+                seen_texts.add(abbrev.lower())
+                print(f"[EXTRACT] Diagnosis (abbrev): '{abbrev.upper()}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 3: FALLBACK - Use AWS Comprehend on full text if sections yielded nothing
