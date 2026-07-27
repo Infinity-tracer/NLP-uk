@@ -1406,22 +1406,36 @@ def run_comprehend_medical(text: str) -> dict:
             # Skip lines that are date references or parentheticals
             if re.match(r'^\(', line) or re.match(r'^\d{1,2}[/\-]', line):
                 continue
-            # Extract urology stone patterns: "X mm [location] [type] stone"
-            stone_match = re.search(r'(\d+\s*mm\s+(?:left|right)?\s*(?:vuj|ureteric|renal|kidney|upper pole|lower pole)?\s*(?:ureteric|renal|kidney)?\s*(?:stone|calculus))', line, re.IGNORECASE)
-            if stone_match:
-                stone_term = stone_match.group(1).strip()
-                if stone_term.lower() not in seen_texts:
-                    snomed_code, snomed_desc, conf = lookup_snomed(stone_term, client)
-                    if snomed_code:
-                        entity = create_entity(
-                            text=stone_term, snomed_code=snomed_code, description=snomed_desc,
-                            confidence=max(conf, 0.88), category="DIAGNOSIS", clinical_category="diagnoses",
-                            source="diagnosis_section_plaintext"
-                        )
-                        diagnoses.append(entity)
-                        all_entities.append(entity)
-                        seen_texts.add(stone_term.lower())
-                        print(f"[EXTRACT] Diagnosis (plaintext stone): '{stone_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+
+            # Extract urology stone patterns - capture location and type separately
+            stone_patterns = [
+                # "6 mm left VUJ ureteric stone" -> extract "left VUJ ureteric stone"
+                r'\d+\s*mm\s+((?:left|right)\s+(?:vuj\s+)?(?:ureteric|renal|kidney|upper\s+pole|lower\s+pole)\s*(?:renal|kidney)?\s*(?:stone|calculus))',
+                # "left upper pole renal stone"
+                r'((?:left|right)\s+(?:upper|lower|mid)\s*(?:pole)?\s*(?:renal|kidney|ureteric)\s*(?:stone|calculus))',
+                # "ureteric stone", "renal stone"
+                r'((?:left|right)?\s*(?:ureteric|renal|kidney)\s+(?:stone|calculus))',
+            ]
+
+            for pattern in stone_patterns:
+                stone_match = re.search(pattern, line, re.IGNORECASE)
+                if stone_match:
+                    stone_term = stone_match.group(1).strip()
+                    # Normalize spacing
+                    stone_term = ' '.join(stone_term.split())
+                    if stone_term.lower() not in seen_texts:
+                        snomed_code, snomed_desc, conf = lookup_snomed(stone_term, client)
+                        if snomed_code:
+                            entity = create_entity(
+                                text=stone_term, snomed_code=snomed_code, description=snomed_desc,
+                                confidence=max(conf, 0.88), category="DIAGNOSIS", clinical_category="diagnoses",
+                                source="diagnosis_section_plaintext"
+                            )
+                            diagnoses.append(entity)
+                            all_entities.append(entity)
+                            seen_texts.add(stone_term.lower())
+                            print(f"[EXTRACT] Diagnosis (plaintext stone): '{stone_term}' -> SNOMED {snomed_code}", file=sys.stderr)
+                            break  # Found one stone pattern for this line
 
     # ── MEDICATION EXTRACTOR ──
     # Extract from medication section
