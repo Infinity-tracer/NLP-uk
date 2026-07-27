@@ -949,6 +949,10 @@ def run_comprehend_medical(text: str) -> dict:
     import re
     import sys
 
+    # Debug: Show input text stats to trace call source
+    print(f"[SNOMED-ENTRY] run_comprehend_medical called with text length={len(text)}", file=sys.stderr)
+    print(f"[SNOMED-ENTRY] Text start: {text[:100]}...", file=sys.stderr)
+
     client = make_client("comprehendmedical")
 
     # Initialize 5 category buckets
@@ -1263,9 +1267,10 @@ def run_comprehend_medical(text: str) -> dict:
         return None, None, 0.0
 
     def create_entity(text: str, snomed_code: str, description: str, confidence: float,
-                      category: str, clinical_category: str, source: str, icd_code: str = None) -> dict:
-        """Create a standardized entity dict."""
-        return {
+                      category: str, clinical_category: str, source: str, icd_code: str = None,
+                      start_pos: int = None, end_pos: int = None) -> dict:
+        """Create a standardized entity dict with position information for evidence tracking."""
+        entity = {
             "text": text,
             "category": category,
             "snomed_code": snomed_code,
@@ -1276,6 +1281,11 @@ def run_comprehend_medical(text: str) -> dict:
             "clinical_category": clinical_category,
             "icd_code": icd_code,
         }
+        # Add position info if provided (required for evidence validation)
+        if start_pos is not None:
+            entity["start_pos"] = start_pos
+            entity["end_pos"] = end_pos if end_pos is not None else start_pos + len(text)
+        return entity
 
     # ── DIAGNOSIS EXTRACTOR ──
     # Extract from diagnosis section, use ICD-to-SNOMED mapping first
@@ -1935,70 +1945,80 @@ def run_comprehend_medical(text: str) -> dict:
 
     # Search for mental health problems/symptoms
     for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
-        if re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE):
+        match = re.search(rf’\b{re.escape(term)}\b’, text, re.IGNORECASE)
+        if match:
             if term.lower() not in seen_texts:
                 entity = create_entity(
                     text=term, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.90, category="PROBLEM",
-                    clinical_category="problems", source="fulltext_dictionary"
+                    clinical_category="problems", source="fulltext_dictionary",
+                    start_pos=match.start(), end_pos=match.end()
                 )
                 problems.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(term.lower())
-                print(f"[EXTRACT] Problem (fulltext): '{term}' -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Problem (fulltext): ‘{term}’ -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for treatments/therapies in full text
     for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
-        if re.search(rf'\b{re.escape(proc_name)}\b', text, re.IGNORECASE):
+        match = re.search(rf’\b{re.escape(proc_name)}\b’, text, re.IGNORECASE)
+        if match:
             if proc_name.lower() not in seen_texts:
                 entity = create_entity(
                     text=proc_name, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.90, category="TREATMENT",
-                    clinical_category="treatments", source="fulltext_dictionary"
+                    clinical_category="treatments", source="fulltext_dictionary",
+                    start_pos=match.start(), end_pos=match.end()
                 )
                 treatments.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(proc_name.lower())
-                print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Treatment (fulltext): ‘{proc_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for medications in full text
     for med_name, (snomed_code, snomed_desc) in MEDICATION_SNOMED.items():
-        if re.search(rf'\b{re.escape(med_name)}\b', text, re.IGNORECASE):
+        match = re.search(rf’\b{re.escape(med_name)}\b’, text, re.IGNORECASE)
+        if match:
             if med_name.lower() not in seen_texts:
                 entity = create_entity(
                     text=med_name, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.90, category="MEDICATION",
-                    clinical_category="medications", source="fulltext_dictionary"
+                    clinical_category="medications", source="fulltext_dictionary",
+                    start_pos=match.start(), end_pos=match.end()
                 )
                 medications.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(med_name.lower())
-                print(f"[EXTRACT] Medication (fulltext): '{med_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Medication (fulltext): ‘{med_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for investigations in full text
     for inv_name, (snomed_code, snomed_desc) in INVESTIGATION_SNOMED.items():
-        if re.search(rf'\b{re.escape(inv_name)}\b', text, re.IGNORECASE):
+        match = re.search(rf’\b{re.escape(inv_name)}\b’, text, re.IGNORECASE)
+        if match:
             if inv_name.lower() not in seen_texts:
                 entity = create_entity(
                     text=inv_name, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.88, category="INVESTIGATION",
-                    clinical_category="investigations", source="fulltext_dictionary"
+                    clinical_category="investigations", source="fulltext_dictionary",
+                    start_pos=match.start(), end_pos=match.end()
                 )
                 investigations.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(inv_name.lower())
-                print(f"[EXTRACT] Investigation (fulltext): '{inv_name}' -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Investigation (fulltext): ‘{inv_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
 
-    # Search for clinical abbreviations and conditions (HTN, DM, AF, Crohn's, etc.) in full text
+    # Search for clinical abbreviations and conditions (HTN, DM, AF, Crohn’s, etc.) in full text
     for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
-        # Handle apostrophes in terms like "crohn's disease"
-        search_pattern = abbrev.replace("'", "['’]?")  # Match ' or ' or missing
-        if re.search(rf'\b{search_pattern}\b', text, re.IGNORECASE):
+        # Handle apostrophes in terms like "crohn’s disease"
+        search_pattern = abbrev.replace("’", "[‘’]?")  # Match ‘ or ‘ or missing
+        match = re.search(rf’\b{search_pattern}\b’, text, re.IGNORECASE)
+        if match:
             if abbrev.lower() not in seen_texts:
                 entity = create_entity(
                     text=abbrev, snomed_code=snomed_code, description=snomed_desc,
                     confidence=0.92, category="DIAGNOSIS",
-                    clinical_category="diagnoses", source="abbreviation_dictionary"
+                    clinical_category="diagnoses", source="abbreviation_dictionary",
+                    start_pos=match.start(), end_pos=match.end()
                 )
                 diagnoses.append(entity)
                 all_entities.append(entity)
