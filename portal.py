@@ -1923,7 +1923,15 @@ def run_comprehend_medical(text: str) -> dict:
     # ═══════════════════════════════════════════════════════════════════════════════
 
     # Always search full text for known terms (catches conditions in SUMMARY section)
-    print("[FULLTEXT] Searching full text for known clinical terms...", file=sys.stderr)
+    print(f"[FULLTEXT] Searching full text for known clinical terms... (text length: {len(text)})", file=sys.stderr)
+    print(f"[FULLTEXT] Text sample: {text[:500]}...", file=sys.stderr)
+    # Debug: Check if specific expected terms are in text
+    debug_terms = ['tamsulosin', 'dissolution therapy', 'crohn', 'blood pressure', 'ct scan', 'blood test']
+    for dt in debug_terms:
+        if dt.lower() in text.lower():
+            print(f"[FULLTEXT-DEBUG] Term '{dt}' FOUND in text", file=sys.stderr)
+        else:
+            print(f"[FULLTEXT-DEBUG] Term '{dt}' NOT FOUND in text", file=sys.stderr)
 
     # Search for mental health problems/symptoms
     for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
@@ -2415,10 +2423,12 @@ def run_comprehend_medical(text: str) -> dict:
                 return allowed, negated
 
             # Filter diagnoses and problems (most important for negation)
+            print(f"[NEGATION-BEFORE] diagnoses={len(diagnoses)}, problems={len(problems)}, treatments={len(treatments)}", file=sys.stderr)
             diagnoses, neg_diag = filter_negated(diagnoses, text)
             problems, neg_prob = filter_negated(problems, text)
             negated_entities.extend(neg_diag)
             negated_entities.extend(neg_prob)
+            print(f"[NEGATION-AFTER] diagnoses={len(diagnoses)}, problems={len(problems)}", file=sys.stderr)
 
             # Also filter treatments (might be "not on treatment")
             treatments, neg_treat = filter_negated(treatments, text)
