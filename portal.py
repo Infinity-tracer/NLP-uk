@@ -1085,6 +1085,8 @@ def run_comprehend_medical(text: str) -> dict:
     print(f"[SECTION] Investigation section: {len(investigation_section)} chars", file=sys.stderr)
     print(f"[SECTION] Problems section: {len(problems_section)} chars", file=sys.stderr)
 
+    print(f"[STEP2] Starting section-based extraction... (text_len={len(text)})", file=sys.stderr)
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # STEP 2: SECTION-BASED EXTRACTION
     # Extract candidates from their appropriate sections
@@ -1932,6 +1934,7 @@ def run_comprehend_medical(text: str) -> dict:
     # Always run to catch conditions mentioned in summary/narrative sections
     # ═══════════════════════════════════════════════════════════════════════════════
 
+    print(f"[STEP2.5] Entering fulltext search...", file=sys.stderr)
     # Always search full text for known terms (catches conditions in SUMMARY section)
     print(f"[FULLTEXT] Searching full text for known clinical terms... (text length: {len(text)})", file=sys.stderr)
     print(f"[FULLTEXT] Text sample: {text[:500]}...", file=sys.stderr)
