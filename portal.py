@@ -7353,8 +7353,33 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
       <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.pdf,.tiff,.tif" style="display:none">
       <p class="supported">Supported: JPEG, PNG, PDF, TIFF</p>
     </div>
-    <div style="margin-top:32px;max-width:560px;width:100%">
-      <div class="section-title" style="text-align:center">Pipeline Overview</div>
+
+    <!-- Pipeline Mode Toggle -->
+    <div style="margin-top:24px;max-width:560px;width:100%;background:#fff;border-radius:12px;padding:20px;border:1px solid var(--border)">
+      <div class="section-title" style="text-align:center;margin:0 0 16px 0">Select Processing Mode</div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <label style="flex:1;max-width:250px;cursor:pointer">
+          <input type="radio" name="pipeline-mode" value="full" checked style="display:none">
+          <div class="pipeline-option" id="opt-full" style="border:2px solid var(--nhs-blue);border-radius:10px;padding:16px;text-align:center;background:#f0f7ff;transition:.2s">
+            <div style="font-size:28px;margin-bottom:8px">🔬</div>
+            <div style="font-weight:700;color:var(--nhs-dark);margin-bottom:4px">Full Pipeline</div>
+            <div style="font-size:11px;color:var(--muted)">Multi-stage NLP extraction with SNOMED mapping, negation detection, clinical validation</div>
+          </div>
+        </label>
+        <label style="flex:1;max-width:250px;cursor:pointer">
+          <input type="radio" name="pipeline-mode" value="llm" style="display:none">
+          <div class="pipeline-option" id="opt-llm" style="border:2px solid var(--border);border-radius:10px;padding:16px;text-align:center;background:#fff;transition:.2s">
+            <div style="font-size:28px;margin-bottom:8px">🤖</div>
+            <div style="font-weight:700;color:var(--nhs-dark);margin-bottom:4px">Direct LLM</div>
+            <div style="font-size:11px;color:var(--muted)">Fast single-shot extraction via Claude AI - simpler but effective</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Pipeline Overview (shown for Full Pipeline) -->
+    <div id="pipeline-overview-full" style="margin-top:24px;max-width:560px;width:100%">
+      <div class="section-title" style="text-align:center">Full Pipeline Overview</div>
       <div style="display:flex;justify-content:center;gap:0;margin-top:12px">
         <div style="text-align:center;padding:0 12px">
           <div style="font-size:22px">📷</div>
@@ -7384,6 +7409,36 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
           <div style="font-size:22px">✅</div>
           <div style="font-size:11px;font-weight:600;color:var(--nhs-green);margin-top:4px">Result</div>
           <div style="font-size:11px;color:var(--muted)">Auto / Review</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline Overview (shown for LLM Direct) -->
+    <div id="pipeline-overview-llm" style="margin-top:24px;max-width:560px;width:100%;display:none">
+      <div class="section-title" style="text-align:center">LLM Direct Pipeline</div>
+      <div style="display:flex;justify-content:center;gap:0;margin-top:12px">
+        <div style="text-align:center;padding:0 20px">
+          <div style="font-size:28px">📄</div>
+          <div style="font-size:11px;font-weight:600;color:var(--nhs-blue);margin-top:4px">Upload</div>
+          <div style="font-size:11px;color:var(--muted)">PDF/Image</div>
+        </div>
+        <div style="color:var(--border);padding-top:20px;font-size:24px">→</div>
+        <div style="text-align:center;padding:0 20px">
+          <div style="font-size:28px">🔍</div>
+          <div style="font-size:11px;font-weight:600;color:var(--nhs-blue);margin-top:4px">OCR</div>
+          <div style="font-size:11px;color:var(--muted)">Textract</div>
+        </div>
+        <div style="color:var(--border);padding-top:20px;font-size:24px">→</div>
+        <div style="text-align:center;padding:0 20px">
+          <div style="font-size:28px">🤖</div>
+          <div style="font-size:11px;font-weight:600;color:var(--nhs-blue);margin-top:4px">Claude</div>
+          <div style="font-size:11px;color:var(--muted)">Extract All</div>
+        </div>
+        <div style="color:var(--border);padding-top:20px;font-size:24px">→</div>
+        <div style="text-align:center;padding:0 20px">
+          <div style="font-size:28px">✅</div>
+          <div style="font-size:11px;font-weight:600;color:var(--nhs-green);margin-top:4px">Result</div>
+          <div style="font-size:11px;color:var(--muted)">Structured</div>
         </div>
       </div>
     </div>
@@ -7765,6 +7820,38 @@ body{background:var(--bg);color:var(--text);min-height:100vh}
 <script>
 let currentDocId = null;
 let currentResult = null;
+let selectedPipeline = 'full';  // 'full' or 'llm'
+
+// Pipeline mode toggle
+document.querySelectorAll('input[name="pipeline-mode"]').forEach(radio => {
+  radio.addEventListener('change', e => {
+    selectedPipeline = e.target.value;
+    updatePipelineUI();
+  });
+});
+
+function updatePipelineUI() {
+  const optFull = document.getElementById('opt-full');
+  const optLlm = document.getElementById('opt-llm');
+  const overviewFull = document.getElementById('pipeline-overview-full');
+  const overviewLlm = document.getElementById('pipeline-overview-llm');
+
+  if (selectedPipeline === 'full') {
+    optFull.style.border = '2px solid var(--nhs-blue)';
+    optFull.style.background = '#f0f7ff';
+    optLlm.style.border = '2px solid var(--border)';
+    optLlm.style.background = '#fff';
+    overviewFull.style.display = 'block';
+    overviewLlm.style.display = 'none';
+  } else {
+    optLlm.style.border = '2px solid var(--nhs-blue)';
+    optLlm.style.background = '#f0f7ff';
+    optFull.style.border = '2px solid var(--border)';
+    optFull.style.background = '#fff';
+    overviewFull.style.display = 'none';
+    overviewLlm.style.display = 'block';
+  }
+}
 
 // Drag & drop
 const dropZone = document.getElementById('drop-zone');
@@ -7792,16 +7879,41 @@ function animateSteps() {
   });
 }
 
+function animateStepsLlm() {
+  // Simpler animation for LLM direct pipeline
+  const steps = ['step-t0','step-t1','step-ta'];  // Only first 3 steps
+  const labels = ['Document uploaded', 'Running OCR...', 'Claude AI extracting...'];
+  steps.forEach((id, i) => {
+    setTimeout(() => {
+      if(i > 0) document.getElementById(steps[i-1]).className = 'step done';
+      document.getElementById(id).className = 'step active';
+    }, i * 1500);
+  });
+}
+
 async function uploadFile(file) {
   showPanel('processing');
   document.getElementById('topbar-title').textContent = 'Processing: ' + file.name;
-  animateSteps();
+
+  // Choose endpoint based on pipeline mode
+  const endpoint = selectedPipeline === 'llm' ? '/api/process-llm' : '/api/process';
+  const pipelineLabel = selectedPipeline === 'llm' ? 'LLM Direct' : 'Full Pipeline';
+
+  // Update processing panel text
+  document.querySelector('#processing-panel h3').textContent = 'Processing Document...';
+  document.querySelector('#processing-panel p').textContent = `Running ${pipelineLabel}`;
+
+  if (selectedPipeline === 'llm') {
+    animateStepsLlm();
+  } else {
+    animateSteps();
+  }
 
   const fd = new FormData();
   fd.append('file', file);
 
   try {
-    const resp = await fetch('/api/process', { method:'POST', body:fd });
+    const resp = await fetch(endpoint, { method:'POST', body:fd });
     const data = await resp.json();
     if(data.error && !data.doc_id) { alert('Error: ' + data.error); showPanel('upload'); return; }
     currentResult = data;
@@ -9064,6 +9176,367 @@ def health():
 @app.route("/")
 def index():
     return render_template_string(HTML)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DIRECT LLM PIPELINE - Simplified extraction via Claude
+# ══════════════════════════════════════════════════════════════════════════════
+
+def run_llm_direct_pipeline(doc_id: str, upload_path: Path) -> dict:
+    """
+    Simplified LLM-direct pipeline: OCR → Claude → Structured Output.
+
+    Bypasses complex multi-stage pipeline and sends OCR text directly to
+    Claude for comprehensive extraction in a single call.
+    """
+    import sys
+
+    result = {
+        "doc_id": doc_id,
+        "filename": upload_path.name,
+        "processed_at": datetime.now().isoformat(),
+        "status": "processing",
+        "pipeline_mode": "llm_direct",
+        "requires_review": False,
+        "pages_processed": 0,
+    }
+
+    # ── Step 1: Prepare pages from PDF ────────────────────────────────────────
+    work_dir = UPLOAD_DIR / doc_id
+    work_dir.mkdir(exist_ok=True)
+
+    try:
+        image_paths = _prepare_pages(upload_path, work_dir)
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = f"Document ingestion failed: {e}"
+        return result
+
+    result["pages_processed"] = len(image_paths)
+
+    # ── Step 2: Generate preview images ───────────────────────────────────────
+    preview_paths = []
+    try:
+        import fitz as _fitz
+        _ext = upload_path.suffix.lower()
+        if _ext == ".pdf":
+            _doc = _fitz.open(str(upload_path))
+            _mat = _fitz.Matrix(1.5, 1.5)
+            for _i, _pg in enumerate(_doc):
+                _pix = _pg.get_pixmap(matrix=_mat)
+                _dest = work_dir / f"orig_{_i+1:02d}.png"
+                _pix.save(str(_dest))
+                preview_paths.append(_dest)
+        else:
+            _dest = work_dir / f"orig_01{upload_path.suffix}"
+            if not _dest.exists():
+                shutil.copy(str(upload_path), str(_dest))
+            preview_paths.append(_dest)
+    except Exception:
+        preview_paths = [p for p in image_paths if p.exists()]
+
+    result["preview_pages"] = [f"/pages/{doc_id}/{p.name}" for p in preview_paths if p.exists()]
+    result["preview_image"] = result["preview_pages"][0] if result["preview_pages"] else None
+
+    # ── Step 3: OCR via Textract ──────────────────────────────────────────────
+    all_text = []
+    all_confs = []
+    try:
+        for img in image_paths:
+            t = run_textract(img)
+            if t["text"].strip():
+                all_text.append(t["text"])
+                all_confs.append(t["confidence"])
+        doc_text = "\n\n".join(all_text)
+        textract_conf = (sum(all_confs) / len(all_confs)) if all_confs else 0.5
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = f"OCR failed: {e}"
+        return result
+
+    if not doc_text.strip():
+        result["status"] = "error"
+        result["error"] = "No text extracted from document"
+        return result
+
+    result["extracted_text"] = doc_text[:8000]
+    print(f"[LLM-DIRECT] OCR complete: {len(doc_text)} chars, confidence={textract_conf:.2f}", file=sys.stderr)
+
+    # ── Step 4: Direct LLM extraction ─────────────────────────────────────────
+    try:
+        llm_result = _call_llm_for_extraction(doc_text)
+        print(f"[LLM-DIRECT] LLM extraction complete", file=sys.stderr)
+    except Exception as e:
+        print(f"[LLM-DIRECT] LLM extraction failed: {e}", file=sys.stderr)
+        result["status"] = "error"
+        result["error"] = f"LLM extraction failed: {e}"
+        return result
+
+    # ── Step 5: Map LLM output to expected result format ──────────────────────
+    result["status"] = "processed"
+    result["letter_type"] = llm_result.get("letter_type", "")
+    result["event_date"] = llm_result.get("event_date", "")
+    result["letter_date"] = llm_result.get("letter_date", "")
+    result["conclusion"] = llm_result.get("conclusion", "")
+    result["recommendation"] = llm_result.get("recommendation", "")
+
+    # Patient info
+    result["patient_info"] = {
+        "name": llm_result.get("patient_name", ""),
+        "dob": llm_result.get("patient_dob", ""),
+        "nhs_number": llm_result.get("nhs_number", ""),
+        "sex": llm_result.get("patient_sex", ""),
+        "address": llm_result.get("patient_address", ""),
+    }
+
+    # Structured fields
+    result["structured"] = {
+        "consultant": llm_result.get("consultant", ""),
+        "department": llm_result.get("department", ""),
+        "hospital": llm_result.get("hospital", ""),
+        "gp_practice": llm_result.get("gp_practice", ""),
+    }
+
+    # SNOMED data - map from LLM output
+    problems = llm_result.get("problems", [])
+    treatments = llm_result.get("treatments", [])
+    medications = llm_result.get("medications", [])
+    investigations = llm_result.get("investigations", [])
+    diagnoses = llm_result.get("diagnoses", [])
+
+    # Convert to expected format with SNOMED codes
+    def format_entity(item, category):
+        if isinstance(item, str):
+            return {"text": item, "snomed_code": "", "snomed_description": item, "confidence": 0.90, "source": "llm_direct"}
+        return {
+            "text": item.get("term", item.get("text", "")),
+            "snomed_code": item.get("snomed_code", ""),
+            "snomed_description": item.get("snomed_description", item.get("term", "")),
+            "confidence": 0.90,
+            "source": "llm_direct",
+            "dose": item.get("dose", ""),
+            "frequency": item.get("frequency", ""),
+            "result": item.get("result", ""),
+            "is_pending": item.get("is_pending", False),
+        }
+
+    result["snomed"] = {
+        "problems": [format_entity(p, "problems") for p in problems],
+        "treatments": [format_entity(t, "treatments") for t in treatments],
+        "medications": [format_entity(m, "medications") for m in medications],
+        "investigations": [format_entity(i, "investigations") for i in investigations],
+        "diagnoses": [format_entity(d, "diagnoses") for d in diagnoses],
+        "all_entities": [],
+        "snomed_confidence": 0.85,
+        "used_fallback": False,
+        "negated_entities": [],
+    }
+
+    # Summaries
+    result["summaries"] = {
+        "clinician_summary": llm_result.get("clinician_summary", ""),
+        "patient_summary": llm_result.get("patient_summary", ""),
+        "pharmacist_summary": llm_result.get("pharmacist_summary", ""),
+    }
+
+    # Actions
+    result["actions_structured"] = {
+        "gp_surgery_actions": {
+            "doctor": llm_result.get("actions_gp_doctor", []),
+            "pharmacist": llm_result.get("actions_gp_pharmacist", []),
+            "reception": llm_result.get("actions_gp_reception", []),
+        },
+        "sender_actions": {"doctor": [], "pharmacist": [], "reception": []},
+        "patient_actions": llm_result.get("actions_patient", []),
+        "patient_booking": llm_result.get("actions_patient_booking", []),
+    }
+
+    # Diary events
+    result["diary_events"] = llm_result.get("diary_events", [])
+
+    # Confidence
+    result["unified_confidence"] = 0.85
+    result["confidence_breakdown"] = {
+        "ocr": textract_conf,
+        "extraction": 0.85,
+        "snomed": 0.85,
+    }
+
+    return result
+
+
+def _call_llm_for_extraction(text: str) -> dict:
+    """
+    Call Claude directly to extract all clinical information in one shot.
+    Returns structured dict with all required fields.
+    """
+    import sys
+
+    client = make_client("bedrock-runtime")
+    MODEL = "arn:aws:bedrock:eu-west-2:654654155641:inference-profile/eu.anthropic.claude-sonnet-5"
+
+    prompt = f"""You are an expert NHS clinical document analyst. Extract ALL information from this clinical document.
+
+CRITICAL RULES:
+1. Extract ONLY information from the CURRENT encounter - NOT historical/past medical history
+2. For SNOMED codes: provide the most specific SNOMED CT code you know
+3. If a field has no information, use empty string "" or empty array []
+4. Dates should be in DD/MM/YYYY format
+
+DOCUMENT TEXT:
+{text[:8000]}
+
+Return a JSON object with this EXACT structure (no markdown, no explanation):
+{{
+  "letter_type": "Type of document (e.g., Hospital Discharge Summary, Clinical Letter, ED Report)",
+  "event_date": "DD/MM/YYYY - date of admission/procedure/event",
+  "letter_date": "DD/MM/YYYY - date letter was written",
+  "patient_name": "Patient full name",
+  "patient_dob": "DD/MM/YYYY",
+  "nhs_number": "NHS number if present",
+  "patient_sex": "Male/Female",
+  "patient_address": "Patient address",
+  "consultant": "Consultant name",
+  "department": "Department name",
+  "hospital": "Hospital name",
+  "gp_practice": "GP practice name if mentioned",
+
+  "problems": [
+    {{"term": "symptom/finding", "snomed_code": "code", "snomed_description": "description"}}
+  ],
+  "treatments": [
+    {{"term": "procedure/treatment", "snomed_code": "code", "snomed_description": "description"}}
+  ],
+  "medications": [
+    {{"term": "drug name", "dose": "dose", "frequency": "frequency", "snomed_code": "code"}}
+  ],
+  "investigations": [
+    {{"term": "test name", "result": "result or pending", "snomed_code": "code", "is_pending": true/false}}
+  ],
+  "diagnoses": [
+    {{"term": "diagnosis", "snomed_code": "code", "snomed_description": "description"}}
+  ],
+
+  "clinician_summary": "2-3 sentence clinical summary for GP",
+  "patient_summary": "Simple summary for patient to understand",
+  "pharmacist_summary": "Medication-focused summary",
+
+  "conclusion": "Clinical conclusion",
+  "recommendation": "Recommendations",
+
+  "actions_gp_doctor": ["GP doctor actions required"],
+  "actions_gp_pharmacist": ["GP pharmacist actions"],
+  "actions_gp_reception": ["GP reception actions"],
+  "actions_patient": ["Patient actions"],
+  "actions_patient_booking": ["Appointments to book"],
+
+  "diary_events": [
+    {{"event": "what", "due_date": "when", "responsible_party": "who"}}
+  ]
+}}
+
+Output ONLY the JSON object, nothing else."""
+
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 4000,
+        "thinking": {"type": "disabled"},
+        "messages": [{"role": "user", "content": prompt}]
+    })
+
+    print(f"[LLM-DIRECT] Calling Bedrock Claude...", file=sys.stderr)
+    resp = client.invoke_model(modelId=MODEL, body=body, contentType="application/json")
+    resp_bytes = resp["body"].read()
+
+    if not resp_bytes:
+        raise ValueError("Empty response from Bedrock")
+
+    resp_body = json.loads(resp_bytes)
+
+    # Extract text content
+    raw = ""
+    if "content" in resp_body and resp_body["content"]:
+        for content_item in resp_body["content"]:
+            if isinstance(content_item, dict):
+                if content_item.get("type") == "thinking":
+                    continue
+                if content_item.get("type") == "text" or "text" in content_item:
+                    text_content = content_item.get("text", "") or content_item.get("value", "")
+                    if text_content:
+                        raw = text_content
+                        break
+            elif isinstance(content_item, str):
+                raw = content_item
+                break
+    elif "completion" in resp_body:
+        raw = resp_body["completion"].strip()
+
+    raw = raw.strip()
+    print(f"[LLM-DIRECT] Raw response length: {len(raw)}", file=sys.stderr)
+
+    # Clean and parse JSON
+    import re as _re
+    _raw_clean = _re.sub(r'```(?:json)?\s*', '', raw).strip()
+    _raw_clean = _re.sub(r'```\s*$', '', _raw_clean).strip()
+
+    _start = _raw_clean.find('{')
+    _end = _raw_clean.rfind('}')
+
+    if _start == -1 or _end == -1 or _start >= _end:
+        _start = raw.find('{')
+        _end = raw.rfind('}')
+        if _start != -1 and _end != -1 and _start < _end:
+            _raw_clean = raw
+
+    if _start != -1 and _end != -1 and _start < _end:
+        _json_str = _raw_clean[_start:_end + 1]
+        try:
+            return json.loads(_json_str)
+        except json.JSONDecodeError as je:
+            print(f"[LLM-DIRECT] JSON parse error: {je.msg}", file=sys.stderr)
+            raise ValueError(f"Invalid JSON: {je.msg}")
+
+    raise ValueError("No JSON object found in response")
+
+
+@app.route("/api/process-llm", methods=["POST"])
+def process_document_llm():
+    """
+    Direct LLM extraction endpoint - simplified pipeline.
+    Upload PDF → OCR → Claude → Structured output.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    f = request.files["file"]
+    ext = Path(f.filename).suffix.lower()
+    if ext not in ALLOWED_EXT:
+        return jsonify({"error": f"Unsupported file type: {ext}"}), 400
+
+    doc_id = str(uuid.uuid4())[:8]
+    filename = secure_filename(f.filename)
+    save_path = UPLOAD_DIR / f"{doc_id}_{filename}"
+    f.save(str(save_path))
+
+    try:
+        result = run_llm_direct_pipeline(doc_id, save_path)
+    except Exception as e:
+        app.logger.exception("LLM pipeline failed doc_id=%s filename=%s", doc_id, filename)
+        result = {
+            "doc_id": doc_id,
+            "filename": filename,
+            "status": "error",
+            "error": "An internal error occurred while processing the document.",
+            **({"error_detail": str(e)} if app.debug else {}),
+        }
+
+    # Persist result
+    result_path = RESULTS_DIR / f"{doc_id}_result.json"
+    with open(result_path, "w") as fp:
+        r = {k: v for k, v in result.items() if k != "blocks"}
+        json.dump(r, fp, indent=2, default=str)
+
+    return jsonify(result)
 
 
 @app.route("/api/process", methods=["POST"])
