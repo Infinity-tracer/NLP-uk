@@ -1948,7 +1948,7 @@ def run_comprehend_medical(text: str) -> dict:
 
     # Search for mental health problems/symptoms
     for term, (snomed_code, snomed_desc) in MENTAL_HEALTH_SNOMED.items():
-        match = re.search(rf’\b{re.escape(term)}\b’, text, re.IGNORECASE)
+        match = re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE)
         if match:
             if term.lower() not in seen_texts:
                 entity = create_entity(
@@ -1960,11 +1960,11 @@ def run_comprehend_medical(text: str) -> dict:
                 problems.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(term.lower())
-                print(f"[EXTRACT] Problem (fulltext): ‘{term}’ -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Problem (fulltext): '{term}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for treatments/therapies in full text
     for proc_name, (snomed_code, snomed_desc) in PROCEDURE_SNOMED.items():
-        match = re.search(rf’\b{re.escape(proc_name)}\b’, text, re.IGNORECASE)
+        match = re.search(rf'\b{re.escape(proc_name)}\b', text, re.IGNORECASE)
         if match:
             if proc_name.lower() not in seen_texts:
                 entity = create_entity(
@@ -1976,11 +1976,11 @@ def run_comprehend_medical(text: str) -> dict:
                 treatments.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(proc_name.lower())
-                print(f"[EXTRACT] Treatment (fulltext): ‘{proc_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Treatment (fulltext): '{proc_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for medications in full text
     for med_name, (snomed_code, snomed_desc) in MEDICATION_SNOMED.items():
-        match = re.search(rf’\b{re.escape(med_name)}\b’, text, re.IGNORECASE)
+        match = re.search(rf'\b{re.escape(med_name)}\b', text, re.IGNORECASE)
         if match:
             if med_name.lower() not in seen_texts:
                 entity = create_entity(
@@ -1992,11 +1992,11 @@ def run_comprehend_medical(text: str) -> dict:
                 medications.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(med_name.lower())
-                print(f"[EXTRACT] Medication (fulltext): ‘{med_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Medication (fulltext): '{med_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
     # Search for investigations in full text
     for inv_name, (snomed_code, snomed_desc) in INVESTIGATION_SNOMED.items():
-        match = re.search(rf’\b{re.escape(inv_name)}\b’, text, re.IGNORECASE)
+        match = re.search(rf'\b{re.escape(inv_name)}\b', text, re.IGNORECASE)
         if match:
             if inv_name.lower() not in seen_texts:
                 entity = create_entity(
@@ -2008,13 +2008,13 @@ def run_comprehend_medical(text: str) -> dict:
                 investigations.append(entity)
                 all_entities.append(entity)
                 seen_texts.add(inv_name.lower())
-                print(f"[EXTRACT] Investigation (fulltext): ‘{inv_name}’ -> SNOMED {snomed_code}", file=sys.stderr)
+                print(f"[EXTRACT] Investigation (fulltext): '{inv_name}' -> SNOMED {snomed_code}", file=sys.stderr)
 
-    # Search for clinical abbreviations and conditions (HTN, DM, AF, Crohn’s, etc.) in full text
+    # Search for clinical abbreviations and conditions (HTN, DM, AF, Crohn's, etc.) in full text
     for abbrev, (snomed_code, snomed_desc) in ABBREVIATION_SNOMED.items():
-        # Handle apostrophes in terms like "crohn’s disease"
-        search_pattern = abbrev.replace("’", "[‘’]?")  # Match ‘ or ‘ or missing
-        match = re.search(rf’\b{search_pattern}\b’, text, re.IGNORECASE)
+        # Handle apostrophes in terms like "crohn's disease"
+        search_pattern = abbrev.replace("'", "['\\'']?")  # Match curly or straight apostrophe or missing
+        match = re.search(rf'\b{search_pattern}\b', text, re.IGNORECASE)
         if match:
             if abbrev.lower() not in seen_texts:
                 entity = create_entity(
