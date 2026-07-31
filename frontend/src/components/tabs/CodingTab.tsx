@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { ProcessResult, SNOMEDEntity } from '../../api/types';
 import CollapsibleSection from '../CollapsibleSection';
 
