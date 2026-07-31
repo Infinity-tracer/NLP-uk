@@ -1,5 +1,6 @@
 import type { ProcessResult } from '../../api/types';
 import CollapsibleSection from '../CollapsibleSection';
+import { IconClipboard, IconCalendar, IconCheckCircle, IconHospital, IconUser, IconPill, IconPlus } from '../icons/Icons';
 
 interface FollowUpTabProps {
   result: ProcessResult;
@@ -12,19 +13,22 @@ interface RoleActionsBlockProps {
 
 const ROLE_CONFIG = {
   doctor: {
-    label: '👩‍⚕️ Doctor',
+    label: 'Doctor',
+    icon: <IconUser size={14} />,
     bgClass: 'bg-[#1977cc]/10',
     textClass: 'text-[#1977cc]',
     borderClass: 'border-[#1977cc]/20',
   },
   pharmacist: {
-    label: '💊 Pharmacist',
+    label: 'Pharmacist',
+    icon: <IconPill size={14} />,
     bgClass: 'bg-[#059652]/10',
     textClass: 'text-[#059652]',
     borderClass: 'border-[#059652]/20',
   },
   reception: {
-    label: '📋 Reception',
+    label: 'Reception',
+    icon: <IconClipboard size={14} />,
     bgClass: 'bg-[#ffc107]/10',
     textClass: 'text-[#b38600]',
     borderClass: 'border-[#ffc107]/30',
@@ -36,7 +40,7 @@ function ActionCard({ text }: { text: string }) {
     <div className="border border-purple-200 border-l-4 border-l-purple-500 rounded-lg p-3 mb-2 bg-gradient-to-r from-purple-50 to-white transition-all duration-300 hover:shadow-sm">
       <p className="text-sm text-gray-700">{text}</p>
       <div className="text-right mt-2">
-        <button className="text-xs font-semibold text-[#1977cc] border border-[#1977cc] rounded-pill px-4 py-1 hover:bg-[#1977cc]/5 transition-all duration-300">
+        <button className="text-xs font-semibold text-[#1977cc] border border-[#1977cc] rounded-full px-4 py-1 hover:bg-[#1977cc]/5 transition-all duration-300">
           Add
         </button>
       </div>
@@ -50,7 +54,8 @@ function RoleActionsBlock({ role, actions }: RoleActionsBlockProps) {
 
   return (
     <div className="mb-4">
-      <div className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-pill ${config.bgClass} ${config.textClass} mb-2`}>
+      <div className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${config.bgClass} ${config.textClass} mb-2`}>
+        {config.icon}
         {config.label}
       </div>
       <div>
@@ -80,7 +85,7 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
     <div className="space-y-3">
       {/* Recommendation - Collapsible */}
       {recommendation && (
-        <CollapsibleSection title="Recommendation" icon="📋" defaultOpen={true}>
+        <CollapsibleSection title="Recommendation" icon={<IconClipboard size={14} />} defaultOpen={true}>
           <div className="text-sm text-gray-700 leading-relaxed">
             {recommendation}
           </div>
@@ -90,7 +95,7 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
       {/* Diary Events - Collapsible */}
       <CollapsibleSection
         title="Diary Events"
-        icon="📅"
+        icon={<IconCalendar size={14} />}
         defaultOpen={diaryEvents.length > 0}
         badge={
           diaryEvents.length > 0 && (
@@ -106,8 +111,18 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
               <div key={i} className="border border-orange-200 border-l-4 border-l-orange-500 rounded-lg p-3 bg-gradient-to-r from-orange-50 to-white transition-all duration-300 hover:shadow-sm">
                 <p className="text-sm font-medium text-gray-800">{event.event}</p>
                 <div className="flex gap-4 mt-1 text-xs text-gray-500">
-                  {event.due_date && <span>📆 {event.due_date}</span>}
-                  {event.responsible_party && <span>👤 {event.responsible_party}</span>}
+                  {event.due_date && (
+                    <span className="flex items-center gap-1">
+                      <IconCalendar size={12} />
+                      {event.due_date}
+                    </span>
+                  )}
+                  {event.responsible_party && (
+                    <span className="flex items-center gap-1">
+                      <IconUser size={12} />
+                      {event.responsible_party}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
@@ -122,11 +137,12 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
       {/* To-do - Collapsible */}
       <CollapsibleSection
         title="To-do"
-        icon="✓"
+        icon={<IconCheckCircle size={14} />}
         defaultOpen={true}
         badge={
-          <button className="ml-auto text-xs text-[#1977cc] hover:underline font-semibold">
-            + Add task
+          <button className="ml-auto text-xs text-[#1977cc] hover:underline font-semibold flex items-center gap-1">
+            <IconPlus size={12} />
+            Add task
           </button>
         }
       >
@@ -138,7 +154,7 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
       {/* Sender Actions - Collapsible */}
       <CollapsibleSection
         title="Sender Actions"
-        icon="🏥"
+        icon={<IconHospital size={14} />}
         defaultOpen={hasAnyActions}
         badge={
           hasAnyActions && (
@@ -165,7 +181,7 @@ export default function FollowUpTab({ result }: FollowUpTabProps) {
       </CollapsibleSection>
 
       {/* Done - Collapsible */}
-      <CollapsibleSection title="Completed" icon="✅" defaultOpen={false}>
+      <CollapsibleSection title="Completed" icon={<IconCheckCircle size={14} />} defaultOpen={false}>
         <div className="text-sm text-gray-400 italic">
           No completed tasks for this document.
         </div>

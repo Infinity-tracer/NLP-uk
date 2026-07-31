@@ -1,5 +1,6 @@
 import type { ProcessResult } from '../../api/types';
 import CollapsibleSection from '../CollapsibleSection';
+import { IconHospital, IconUser, IconPill, IconClipboard, IconMail, IconDocument, IconHistory, IconLink, IconArchive, IconCheckCircle } from '../icons/Icons';
 
 interface GPActionsTabProps {
   result: ProcessResult;
@@ -7,17 +8,20 @@ interface GPActionsTabProps {
 
 const ROLE_CONFIG = {
   doctor: {
-    label: '👩‍⚕️ Doctor',
+    label: 'Doctor',
+    icon: <IconUser size={14} />,
     bgClass: 'bg-[#1977cc]/10',
     textClass: 'text-[#1977cc]',
   },
   pharmacist: {
-    label: '💊 Pharmacist',
+    label: 'Pharmacist',
+    icon: <IconPill size={14} />,
     bgClass: 'bg-[#059652]/10',
     textClass: 'text-[#059652]',
   },
   reception: {
-    label: '📋 Reception',
+    label: 'Reception',
+    icon: <IconClipboard size={14} />,
     bgClass: 'bg-[#ffc107]/10',
     textClass: 'text-[#b38600]',
   },
@@ -28,7 +32,7 @@ function GPActionCard({ text }: { text: string }) {
     <div className="border border-[#1977cc]/20 border-l-4 border-l-[#1977cc] rounded-lg p-3 mb-2 bg-gradient-to-r from-[#1977cc]/5 to-white transition-all duration-300 hover:shadow-sm">
       <p className="text-sm text-gray-700">{text}</p>
       <div className="text-right mt-2">
-        <button className="text-xs font-semibold text-[#1977cc] border border-[#1977cc] rounded-pill px-4 py-1 hover:bg-[#1977cc]/5 transition-all duration-300">
+        <button className="text-xs font-semibold text-[#1977cc] border border-[#1977cc] rounded-full px-4 py-1 hover:bg-[#1977cc]/5 transition-all duration-300">
           Add
         </button>
       </div>
@@ -47,7 +51,8 @@ function RoleBlock({ role, actions }: RoleBlockProps) {
 
   return (
     <div className="mb-4">
-      <div className={`inline-block text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-pill ${config.bgClass} ${config.textClass} mb-2`}>
+      <div className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${config.bgClass} ${config.textClass} mb-2`}>
+        {config.icon}
         {config.label}
       </div>
       <div>
@@ -96,7 +101,7 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
       {/* GP Surgery Actions - Collapsible */}
       <CollapsibleSection
         title="GP Surgery Actions"
-        icon="🏥"
+        icon={<IconHospital size={14} />}
         defaultOpen={true}
         badge={
           hasAnyActions && (
@@ -114,7 +119,9 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
           </>
         ) : noGPActionExplicit ? (
           <div className="flex items-center gap-2 p-3 bg-[#059652]/5 border border-[#059652]/20 rounded-lg">
-            <span className="text-[#059652] text-lg">✓</span>
+            <span className="text-[#059652]">
+              <IconCheckCircle size={18} />
+            </span>
             <span className="text-sm font-medium text-[#059652]">
               No GP action required — document explicitly states no actions needed.
             </span>
@@ -130,7 +137,7 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
       {hasPatientActions && (
         <CollapsibleSection
           title="Patient Actions"
-          icon="🧑"
+          icon={<IconUser size={14} />}
           defaultOpen={true}
           badge={
             <span className="ml-2 bg-[#059652]/10 text-[#059652] text-xs px-2 py-0.5 rounded-full font-semibold">
@@ -162,35 +169,39 @@ export default function GPActionsTab({ result }: GPActionsTabProps) {
       )}
 
       {/* Contact - Collapsible */}
-      <CollapsibleSection title="Contact" icon="✉️" defaultOpen={false}>
+      <CollapsibleSection title="Contact" icon={<IconMail size={14} />} defaultOpen={false}>
         <button
           className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-[#1977cc]/5 text-sm flex items-center gap-2 transition-all duration-300"
           onClick={() => alert('In a live deployment this would open the follow-up messaging workflow.')}
         >
-          ✉️ Send follow-up
+          <IconMail size={16} className="text-[#1977cc]" />
+          Send follow-up
         </button>
       </CollapsibleSection>
 
       {/* Document - Collapsible */}
-      <CollapsibleSection title="Document" icon="📄" defaultOpen={false}>
+      <CollapsibleSection title="Document" icon={<IconDocument size={14} />} defaultOpen={false}>
         <div className="space-y-1">
           <button
             className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-2 transition-all duration-300"
             onClick={() => alert('Activity timeline would open here.')}
           >
-            🕐 Open activity
+            <IconHistory size={16} className="text-gray-500" />
+            Open activity
           </button>
           <button
             className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm flex items-center gap-2 transition-all duration-300"
             onClick={copyLink}
           >
-            🔗 Copy link
+            <IconLink size={16} className="text-gray-500" />
+            Copy link
           </button>
           <button
             className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-[#df1529]/5 text-sm flex items-center gap-2 transition-all duration-300 text-[#df1529]"
             onClick={() => alert('Archive would move this document to the archive store.')}
           >
-            🗑️ Archive document
+            <IconArchive size={16} />
+            Archive document
           </button>
         </div>
       </CollapsibleSection>

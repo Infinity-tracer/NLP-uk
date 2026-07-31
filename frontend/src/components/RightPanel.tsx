@@ -1,5 +1,6 @@
 import type { ProcessResult } from '../api/types';
 import CollapsibleSection from './CollapsibleSection';
+import { IconUser, IconDocument, IconHospital, IconGear } from './icons/Icons';
 
 interface RightPanelProps {
   result: ProcessResult;
@@ -51,9 +52,9 @@ export default function RightPanel({ result }: RightPanelProps) {
   };
 
   return (
-    <div className="w-[300px] bg-gray-50/30 overflow-y-auto p-3">
+    <div className="w-full h-full bg-gray-50/30 overflow-y-auto p-3">
       {/* Patient Info - Collapsible */}
-      <CollapsibleSection title="Patient Info" icon="👤" defaultOpen={true}>
+      <CollapsibleSection title="Patient Info" icon={<IconUser size={14} />} defaultOpen={true}>
         <div className="space-y-3">
           <div className="info-row">
             <span className="info-label">Patient Name</span>
@@ -93,7 +94,7 @@ export default function RightPanel({ result }: RightPanelProps) {
       </CollapsibleSection>
 
       {/* Document Info - Collapsible */}
-      <CollapsibleSection title="Document Info" icon="📄" defaultOpen={true}>
+      <CollapsibleSection title="Document Info" icon={<IconDocument size={14} />} defaultOpen={true}>
         <div className="space-y-3">
           <div className="info-row">
             <span className="info-label">Name</span>
@@ -142,7 +143,7 @@ export default function RightPanel({ result }: RightPanelProps) {
 
       {/* Clinical Specifics - Collapsible */}
       {Object.keys(specs).length > 0 && (
-        <CollapsibleSection title="Clinical Specifics" icon="🏥" defaultOpen={false}>
+        <CollapsibleSection title="Clinical Specifics" icon={<IconHospital size={14} />} defaultOpen={false}>
           <div className="space-y-3">
             {Object.entries(specs).map(([key, value]) => {
               const label = CLINICAL_SPECIFICS_LABELS[key] || key.replace(/_/g, ' ');
@@ -161,7 +162,7 @@ export default function RightPanel({ result }: RightPanelProps) {
       )}
 
       {/* Pipeline Stages - Collapsible */}
-      <CollapsibleSection title="Pipeline Stages" icon="⚙️" defaultOpen={false}>
+      <CollapsibleSection title="Pipeline Stages" icon={<IconGear size={14} />} defaultOpen={false}>
         <div className="space-y-2">
           {Object.entries(stages).map(([key, stage]) => {
             if (!stage) return null;
@@ -172,7 +173,7 @@ export default function RightPanel({ result }: RightPanelProps) {
             const textColor = stage.status === 'done' ? 'text-[#059652]' :
                           stage.status === 'partial' ? 'text-[#b38600]' :
                           stage.status === 'error' ? 'text-[#df1529]' :
-                          'text-[#768692]';
+                          'text-gray-500';
             const confText = stage.confidence != null ? ` (${Math.round(stage.confidence * 100)}%)` : '';
             return (
               <div key={key} className={`p-2.5 rounded-lg border ${bgColor}`}>

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
+import { IconDocument, IconSearch, IconCpu, IconCheckCircle } from './icons/Icons';
 
 interface ProcessingPanelProps {
   filename: string;
 }
 
 const PIPELINE_STEPS = [
-  { id: 'upload', label: 'Document uploaded', icon: '📄' },
-  { id: 'ocr', label: 'AWS Textract OCR', icon: '🔍' },
-  { id: 'llm', label: 'Claude AI extraction', icon: '🤖' },
-  { id: 'struct', label: 'Structuring output', icon: '✅' },
+  { id: 'upload', label: 'Document uploaded', icon: <IconDocument size={16} /> },
+  { id: 'ocr', label: 'AWS Textract OCR', icon: <IconSearch size={16} /> },
+  { id: 'llm', label: 'Claude AI extraction', icon: <IconCpu size={16} /> },
+  { id: 'struct', label: 'Structuring output', icon: <IconCheckCircle size={16} /> },
 ];
 
 export default function ProcessingPanel({ filename }: ProcessingPanelProps) {
@@ -31,21 +32,21 @@ export default function ProcessingPanel({ filename }: ProcessingPanelProps) {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in">
-      {/* MediLab Spinner */}
+    <div className="flex-1 flex flex-col items-center justify-center p-8">
+      {/* Spinner */}
       <div className="relative mb-8">
         <div className="w-20 h-20 border-4 border-[#1977cc]/20 rounded-full" />
         <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-t-[#1977cc] rounded-full animate-spin" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl">
-          {PIPELINE_STEPS[currentStep]?.icon || '📄'}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[#1977cc]">
+          {PIPELINE_STEPS[currentStep]?.icon}
         </div>
       </div>
 
-      <h3 className="text-xl font-semibold text-[#2c4964] mb-2 font-heading">Processing Document...</h3>
+      <h3 className="text-xl font-semibold text-[#2c4964] mb-2">Processing Document...</h3>
       <p className="text-sm text-[#444444] mb-6">Running AI-powered extraction pipeline</p>
 
-      {/* Pipeline steps - MediLab Style */}
-      <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-medilab">
+      {/* Pipeline steps */}
+      <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-sm border border-gray-100">
         {PIPELINE_STEPS.map((step, i) => {
           let status: 'done' | 'active' | 'pending' = 'pending';
           if (i < currentStep) status = 'done';
@@ -67,7 +68,7 @@ export default function ProcessingPanel({ filename }: ProcessingPanelProps) {
                   'bg-gray-100 text-gray-400'
                 }`}
               >
-                {status === 'done' ? '✓' : step.icon}
+                {status === 'done' ? <IconCheckCircle size={16} /> : step.icon}
               </div>
               <span>{step.label}</span>
               {status === 'active' && (
@@ -82,7 +83,7 @@ export default function ProcessingPanel({ filename }: ProcessingPanelProps) {
         })}
       </div>
 
-      <p className="text-xs text-[#768692] mt-5">
+      <p className="text-xs text-gray-500 mt-5">
         Processing: <span className="font-medium text-[#2c4964]">{filename}</span>
       </p>
     </div>

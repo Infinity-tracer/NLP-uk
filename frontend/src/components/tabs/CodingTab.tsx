@@ -1,5 +1,6 @@
 import type { ProcessResult, SNOMEDEntity } from '../../api/types';
 import CollapsibleSection from '../CollapsibleSection';
+import { IconCode, IconStethoscope, IconSyringe, IconPill, IconFlask, IconClipboard, IconBarChart, IconHistory, IconRefresh } from '../icons/Icons';
 
 interface CodingTabProps {
   result: ProcessResult;
@@ -9,7 +10,7 @@ type ClinicalCategory = 'problems' | 'treatments' | 'medications' | 'investigati
 
 const CATEGORY_CONFIG: Record<ClinicalCategory, {
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   description: string;
   border: string;
   bg: string;
@@ -18,8 +19,8 @@ const CATEGORY_CONFIG: Record<ClinicalCategory, {
 }> = {
   problems: {
     label: 'Problems / Issues',
-    icon: '🩺',
-    description: 'Symptoms and findings (e.g., neck pain, tummy irritation)',
+    icon: <IconStethoscope size={14} />,
+    description: 'Symptoms and findings',
     border: 'border-orange-500',
     bg: 'bg-orange-50',
     text: 'text-orange-700',
@@ -27,8 +28,8 @@ const CATEGORY_CONFIG: Record<ClinicalCategory, {
   },
   treatments: {
     label: 'Treatment',
-    icon: '💉',
-    description: 'Therapeutic procedures (e.g., Mental Health treatment, Chemo)',
+    icon: <IconSyringe size={14} />,
+    description: 'Therapeutic procedures',
     border: 'border-purple-500',
     bg: 'bg-purple-50',
     text: 'text-purple-700',
@@ -36,8 +37,8 @@ const CATEGORY_CONFIG: Record<ClinicalCategory, {
   },
   medications: {
     label: 'Medication',
-    icon: '💊',
-    description: 'Drugs and substances (e.g., Thyroxine, Aspirin)',
+    icon: <IconPill size={14} />,
+    description: 'Drugs and substances',
     border: 'border-blue-500',
     bg: 'bg-blue-50',
     text: 'text-blue-700',
@@ -45,8 +46,8 @@ const CATEGORY_CONFIG: Record<ClinicalCategory, {
   },
   investigations: {
     label: 'Investigation',
-    icon: '🔬',
-    description: 'Diagnostic tests (e.g., CT Scan, MRI, Smear, Angio)',
+    icon: <IconFlask size={14} />,
+    description: 'Diagnostic tests',
     border: 'border-teal-500',
     bg: 'bg-teal-50',
     text: 'text-teal-700',
@@ -54,8 +55,8 @@ const CATEGORY_CONFIG: Record<ClinicalCategory, {
   },
   diagnoses: {
     label: 'Diagnosis',
-    icon: '📋',
-    description: 'Confirmed conditions (e.g., ulcerative colitis)',
+    icon: <IconClipboard size={14} />,
+    description: 'Confirmed conditions',
     border: 'border-red-500',
     bg: 'bg-red-50',
     text: 'text-red-700',
@@ -172,7 +173,7 @@ export default function CodingTab({ result }: CodingTabProps) {
   return (
     <div className="space-y-3">
       {/* Header */}
-      <CollapsibleSection title="SNOMED CT Overview" icon="🧬" defaultOpen={true}>
+      <CollapsibleSection title="SNOMED CT Overview" icon={<IconCode size={14} />} defaultOpen={true}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="text-sm font-semibold text-[#2c4964]">Clinical Coding</div>
@@ -181,8 +182,12 @@ export default function CodingTab({ result }: CodingTabProps) {
             </div>
           </div>
           <div className="flex items-center gap-2 text-gray-400">
-            <span className="cursor-pointer hover:text-[#1977cc] transition-colors" title="History">🕐</span>
-            <span className="cursor-pointer hover:text-[#1977cc] transition-colors" title="Refresh">↻</span>
+            <span className="cursor-pointer hover:text-[#1977cc] transition-colors" title="History">
+              <IconHistory size={16} />
+            </span>
+            <span className="cursor-pointer hover:text-[#1977cc] transition-colors" title="Refresh">
+              <IconRefresh size={16} />
+            </span>
           </div>
         </div>
 
@@ -223,81 +228,8 @@ export default function CodingTab({ result }: CodingTabProps) {
         </div>
       )}
 
-      {/* Full SNOMED Table - Collapsible */}
-      <CollapsibleSection title="Full SNOMED CT Table" icon="📊" defaultOpen={false}>
-        <div className="border border-[#1977cc] rounded-lg overflow-hidden">
-          <div className="bg-[#1977cc] px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span>🧬</span>
-              <span className="text-white font-bold text-sm">SNOMED CT Mappings</span>
-              <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full font-semibold">
-                {totalEntities} entities
-              </span>
-            </div>
-          </div>
-          <div className="bg-blue-50 px-3 py-1 text-xs text-gray-600 flex gap-3 border-b border-blue-200 flex-wrap">
-            <span><span className="inline-block w-2.5 h-2.5 rounded bg-red-500 mr-1 align-middle" />Diagnosis</span>
-            <span><span className="inline-block w-2.5 h-2.5 rounded bg-orange-500 mr-1 align-middle" />Problem</span>
-            <span><span className="inline-block w-2.5 h-2.5 rounded bg-purple-500 mr-1 align-middle" />Treatment</span>
-            <span><span className="inline-block w-2.5 h-2.5 rounded bg-blue-500 mr-1 align-middle" />Medication</span>
-            <span><span className="inline-block w-2.5 h-2.5 rounded bg-teal-500 mr-1 align-middle" />Investigation</span>
-          </div>
-          <div className="max-h-64 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 sticky top-0">
-                  <th className="px-2 py-1.5 text-left font-bold text-gray-700 border-b border-gray-200">Category</th>
-                  <th className="px-2 py-1.5 text-left font-bold text-gray-700 border-b border-gray-200">Term</th>
-                  <th className="px-2 py-1.5 text-left font-bold text-gray-700 border-b border-gray-200">SNOMED Code</th>
-                  <th className="px-2 py-1.5 text-left font-bold text-gray-700 border-b border-gray-200">Description</th>
-                  <th className="px-2 py-1.5 text-center font-bold text-gray-700 border-b border-gray-200">Conf.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allEntities.map((e, i) => {
-                  const confPct = Math.round((e.confidence || 0) * 100);
-                  const confColor = confPct >= 70 ? 'text-[#059652]' : confPct >= 45 ? 'text-[#b38600]' : 'text-[#df1529]';
-                  const catKey = (e.clinical_category || 'problems') as ClinicalCategory;
-                  const catConfig = CATEGORY_CONFIG[catKey] || CATEGORY_CONFIG.problems;
-                  return (
-                    <tr key={e.entity_id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-2 py-1.5 border-b border-gray-100">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${catConfig.bg} ${catConfig.text}`}>
-                          {catConfig.icon} {catConfig.label}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1.5 font-semibold text-gray-800 border-b border-gray-100">{e.text}</td>
-                      <td className="px-2 py-1.5 border-b border-gray-100">
-                        {e.snomed_code ? (
-                          <code className="bg-[#1977cc]/10 text-[#1977cc] px-1.5 py-0.5 rounded font-mono font-bold text-[11px]">
-                            {e.snomed_code}
-                          </code>
-                        ) : '—'}
-                      </td>
-                      <td className="px-2 py-1.5 text-gray-500 border-b border-gray-100 max-w-xs truncate" title={e.description}>
-                        {e.description || '—'}
-                      </td>
-                      <td className={`px-2 py-1.5 text-center font-bold border-b border-gray-100 ${confColor}`}>
-                        {confPct}%
-                      </td>
-                    </tr>
-                  );
-                })}
-                {totalEntities === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-4 text-center text-gray-400 italic">
-                      No SNOMED CT entities identified
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </CollapsibleSection>
-
       {/* ICD Codes - Collapsible */}
-      <CollapsibleSection title="ICD Codes" icon="📋" defaultOpen={icdCodes.length > 0}>
+      <CollapsibleSection title="ICD Codes" icon={<IconClipboard size={14} />} defaultOpen={icdCodes.length > 0}>
         <div className="flex flex-wrap gap-1">
           {icdCodes.length > 0 ? (
             icdCodes.map((code, i) => (
@@ -312,7 +244,7 @@ export default function CodingTab({ result }: CodingTabProps) {
       </CollapsibleSection>
 
       {/* Medications - Collapsible */}
-      <CollapsibleSection title="Medications (Text)" icon="💊" defaultOpen={medsRaw.length > 0}>
+      <CollapsibleSection title="Medications (Text)" icon={<IconPill size={14} />} defaultOpen={medsRaw.length > 0}>
         <div className="flex flex-wrap gap-1">
           {medsRaw.length > 0 ? (
             medsRaw.map((m, i) => (
@@ -327,7 +259,7 @@ export default function CodingTab({ result }: CodingTabProps) {
       </CollapsibleSection>
 
       {/* Confidence - Collapsible */}
-      <CollapsibleSection title="Confidence Score" icon="📈" defaultOpen={true}>
+      <CollapsibleSection title="Confidence Score" icon={<IconBarChart size={14} />} defaultOpen={true}>
         <div className="flex items-center gap-3">
           <span className="text-2xl font-bold text-[#1977cc]">{confPercent}%</span>
           <div className="flex-1">

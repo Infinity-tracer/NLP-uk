@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ProcessResult } from '../../api/types';
 import { LETTER_TYPE_BUCKETS } from '../../api/types';
 import CollapsibleSection from '../CollapsibleSection';
+import { IconClipboard, IconFileText, IconCalendar, IconHospital, IconCheckCircle, IconCopy } from '../icons/Icons';
 
 interface DetailsTabProps {
   result: ProcessResult;
@@ -52,20 +53,20 @@ export default function DetailsTab({ result }: DetailsTabProps) {
   return (
     <div className="space-y-3">
       {/* Summary - Collapsible */}
-      <CollapsibleSection title="Summary" icon="📋" defaultOpen={true}>
+      <CollapsibleSection title="Summary" icon={<IconClipboard size={14} />} defaultOpen={true}>
         <div className="summary-box relative">
           <button
-            className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute top-2 right-2 text-gray-400 hover:text-[#1977cc] transition-colors"
             onClick={() => navigator.clipboard.writeText(summary)}
             title="Copy"
           >
-            📋
+            <IconCopy size={16} />
           </button>
           {hasBulletSummary ? (
             <ul className="space-y-1.5">
               {bulletSummary.map((line, i) => (
                 <li key={i} className="text-sm flex items-start gap-2">
-                  <span className="text-[#1977cc] font-bold">•</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#1977cc] mt-2 flex-shrink-0" />
                   <span>{line}</span>
                 </li>
               ))}
@@ -87,7 +88,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
       {/* Letter Type - Collapsible */}
       <CollapsibleSection
         title="Letter Type"
-        icon="📑"
+        icon={<IconFileText size={14} />}
         defaultOpen={true}
         badge={
           !isOverride && predictedRaw ? (
@@ -132,7 +133,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
       </CollapsibleSection>
 
       {/* Dates - Collapsible */}
-      <CollapsibleSection title="Dates" icon="📅" defaultOpen={true}>
+      <CollapsibleSection title="Dates" icon={<IconCalendar size={14} />} defaultOpen={true}>
         <div className="flex gap-3">
           <div className="flex-1">
             <label className="field-label">Event Date</label>
@@ -158,7 +159,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
       </CollapsibleSection>
 
       {/* Sender & Consultant - Collapsible */}
-      <CollapsibleSection title="Sender Details" icon="🏥" defaultOpen={true}>
+      <CollapsibleSection title="Sender Details" icon={<IconHospital size={14} />} defaultOpen={true}>
         <div className="space-y-3">
           <div>
             <label className="field-label">Sender Name</label>
@@ -191,7 +192,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
       </CollapsibleSection>
 
       {/* Conclusion - Collapsible */}
-      <CollapsibleSection title="Conclusion" icon="✅" defaultOpen={true}>
+      <CollapsibleSection title="Conclusion" icon={<IconCheckCircle size={14} />} defaultOpen={true}>
         <textarea
           value={conclusion}
           onChange={(e) => setConclusion(e.target.value)}

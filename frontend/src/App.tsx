@@ -7,6 +7,7 @@ import DocumentViewer from './components/DocumentViewer';
 import DetailsPanel from './components/DetailsPanel';
 import RightPanel from './components/RightPanel';
 import HistoryPanel from './components/HistoryPanel';
+import { IconUpload, IconHistory, IconDocument, IconSettings, IconUser, IconChevronLeft, IconChevronRight } from './components/icons/Icons';
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('upload');
@@ -16,6 +17,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [showHistory, setShowHistory] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [leftPanelExpanded, setLeftPanelExpanded] = useState(true);
+  const [centerPanelExpanded, setCenterPanelExpanded] = useState(true);
+  const [rightPanelExpanded, setRightPanelExpanded] = useState(true);
 
   const handleFileUpload = useCallback(async (file: File, mode: PipelineMode = 'full') => {
     setCurrentFile(file);
@@ -64,17 +68,17 @@ export default function App() {
   }, []);
 
   const sidebarItems = [
-    { id: 'upload', icon: '📤', label: 'New Upload', onClick: handleReset, active: appState === 'upload' },
-    { id: 'history', icon: '📋', label: 'History', onClick: () => setShowHistory(true), active: false },
-    { id: 'documents', icon: '📄', label: 'Documents', onClick: () => {}, active: false },
-    { id: 'settings', icon: '⚙️', label: 'Settings', onClick: () => {}, active: false },
+    { id: 'upload', icon: <IconUpload size={20} />, label: 'New Upload', onClick: handleReset, active: appState === 'upload' },
+    { id: 'history', icon: <IconHistory size={20} />, label: 'History', onClick: () => setShowHistory(true), active: false },
+    { id: 'documents', icon: <IconDocument size={20} />, label: 'Documents', onClick: () => {}, active: false },
+    { id: 'settings', icon: <IconSettings size={20} />, label: 'Settings', onClick: () => {}, active: false },
   ];
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      {/* Sidebar - Collapsible MediLab Style */}
+    <div className="h-screen flex overflow-hidden bg-gray-50">
+      {/* Sidebar - Collapsible */}
       <aside
-        className={`bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-medilab-lg transition-all duration-300 ${
+        className={`bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-lg transition-all duration-300 ${
           sidebarExpanded ? 'w-48' : 'w-16'
         }`}
         onMouseEnter={() => setSidebarExpanded(true)}
@@ -83,10 +87,10 @@ export default function App() {
         {/* Logo */}
         <div className={`flex items-center gap-3 mb-4 px-2 ${sidebarExpanded ? 'w-full justify-start pl-3' : 'justify-center'}`}>
           <div className="w-11 h-11 bg-[#1977cc] rounded-full flex items-center justify-center shadow-md flex-shrink-0">
-            <span className="text-white font-black text-xs tracking-tight font-heading">NHS</span>
+            <span className="text-white font-black text-xs tracking-tight">NHS</span>
           </div>
           {sidebarExpanded && (
-            <span className="text-white font-semibold text-sm font-heading whitespace-nowrap animate-fade-in">
+            <span className="text-white font-semibold text-sm whitespace-nowrap">
               Doc Portal
             </span>
           )}
@@ -108,7 +112,7 @@ export default function App() {
             }`}
             title={item.label}
           >
-            <span className="text-xl flex-shrink-0">{item.icon}</span>
+            <span className="flex-shrink-0">{item.icon}</span>
             {sidebarExpanded && (
               <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>
             )}
@@ -126,23 +130,18 @@ export default function App() {
           } text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc]`}
           title="Profile"
         >
-          <span className="text-xl flex-shrink-0">👤</span>
+          <IconUser size={20} />
           {sidebarExpanded && (
             <span className="text-sm font-medium whitespace-nowrap">Profile</span>
           )}
         </button>
-
-        {/* Collapse indicator */}
-        <div className={`mt-3 text-white/50 text-xs transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>
-          ← Collapse
-        </div>
       </aside>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Top bar - MediLab Style */}
-        <header className="h-[56px] bg-white border-b border-gray-100 flex items-center px-6 flex-shrink-0 shadow-medilab-header">
-          <h1 className="text-base font-semibold text-[#2c4964] flex-1 font-heading">
+        {/* Top bar */}
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center px-6 flex-shrink-0 shadow-sm">
+          <h1 className="text-base font-semibold text-[#2c4964] flex-1">
             {appState === 'result' ? 'View Document' : appState === 'processing' ? `Processing: ${currentFile?.name || 'Document'}` : 'Document Extraction Portal'}
           </h1>
           <div className="flex items-center gap-3 text-sm text-[#444444]">
@@ -165,26 +164,107 @@ export default function App() {
 
           {appState === 'result' && result && (
             <div className="flex flex-1 overflow-hidden">
-              <DocumentViewer result={result} file={currentFile} />
-              <DetailsPanel
-                result={result}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                onDownload={handleDownload}
-                onReset={handleReset}
-              />
-              <RightPanel result={result} />
+              {/* Left Panel - Document Viewer (Collapsible) */}
+              <div
+                className={`relative bg-white border-r border-gray-200 flex flex-col overflow-hidden transition-all duration-300 ${
+                  leftPanelExpanded ? 'flex-[1.2]' : 'w-12'
+                }`}
+                onMouseEnter={() => !leftPanelExpanded && setLeftPanelExpanded(true)}
+              >
+                {leftPanelExpanded ? (
+                  <>
+                    <DocumentViewer result={result} file={currentFile} />
+                    <button
+                      onClick={() => setLeftPanelExpanded(false)}
+                      className="absolute top-1/2 -right-3 transform -translate-y-1/2 w-6 h-12 bg-white border border-gray-200 rounded-r-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-[#1977cc] hover:bg-gray-50 transition-all z-10"
+                      title="Collapse panel"
+                    >
+                      <IconChevronLeft size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all">
+                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      DOCUMENT
+                    </div>
+                    <IconChevronRight size={14} className="text-gray-400 mt-2" />
+                  </div>
+                )}
+              </div>
+
+              {/* Center Panel - Details (Collapsible) */}
+              <div
+                className={`relative bg-white border-r border-gray-200 flex flex-col overflow-hidden transition-all duration-300 ${
+                  centerPanelExpanded ? 'w-[420px]' : 'w-12'
+                }`}
+                onMouseEnter={() => !centerPanelExpanded && setCenterPanelExpanded(true)}
+              >
+                {centerPanelExpanded ? (
+                  <>
+                    <DetailsPanel
+                      result={result}
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
+                      onDownload={handleDownload}
+                      onReset={handleReset}
+                    />
+                    <button
+                      onClick={() => setCenterPanelExpanded(false)}
+                      className="absolute top-1/2 -right-3 transform -translate-y-1/2 w-6 h-12 bg-white border border-gray-200 rounded-r-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-[#1977cc] hover:bg-gray-50 transition-all z-10"
+                      title="Collapse panel"
+                    >
+                      <IconChevronLeft size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all">
+                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      DETAILS
+                    </div>
+                    <IconChevronRight size={14} className="text-gray-400 mt-2" />
+                  </div>
+                )}
+              </div>
+
+              {/* Right Panel - Patient/Doc Info (Collapsible) */}
+              <div
+                className={`relative bg-white flex flex-col overflow-hidden transition-all duration-300 ${
+                  rightPanelExpanded ? 'w-[300px]' : 'w-12'
+                }`}
+                onMouseEnter={() => !rightPanelExpanded && setRightPanelExpanded(true)}
+              >
+                {rightPanelExpanded ? (
+                  <>
+                    <RightPanel result={result} />
+                    <button
+                      onClick={() => setRightPanelExpanded(false)}
+                      className="absolute top-1/2 -left-3 transform -translate-y-1/2 w-6 h-12 bg-white border border-gray-200 rounded-l-lg shadow-sm flex items-center justify-center text-gray-400 hover:text-[#1977cc] hover:bg-gray-50 transition-all z-10"
+                      title="Collapse panel"
+                    >
+                      <IconChevronRight size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all">
+                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      INFO
+                    </div>
+                    <IconChevronLeft size={14} className="text-gray-400 mt-2" />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </main>
 
-        {/* New upload button - MediLab Style */}
+        {/* New upload button */}
         {appState === 'result' && (
           <button
             onClick={handleReset}
-            className="fixed bottom-6 right-6 bg-[#1977cc] text-white px-6 py-3 rounded-pill font-semibold shadow-medilab-lg hover:bg-[#2c4964] transition-all duration-300 z-50 font-nav"
+            className="fixed bottom-6 right-6 bg-[#1977cc] text-white px-6 py-3 rounded-full font-semibold shadow-lg hover:bg-[#2c4964] transition-all duration-300 z-50 flex items-center gap-2"
           >
-            + New Document
+            <IconUpload size={18} />
+            New Document
           </button>
         )}
       </div>
