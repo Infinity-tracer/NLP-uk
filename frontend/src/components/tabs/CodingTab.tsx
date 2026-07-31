@@ -146,8 +146,6 @@ function CategorySection({
 }
 
 export default function CodingTab({ result }: CodingTabProps) {
-  const [showTable, setShowTable] = useState(false);
-
   const problems = result.snomed?.problems || [];
   const treatments = result.snomed?.treatments || [];
   const medications = result.snomed?.medications || [];
