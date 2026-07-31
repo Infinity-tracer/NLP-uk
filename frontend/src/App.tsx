@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { ProcessResult, AppState, TabType } from './api/types';
-import { processDocument } from './api/documentApi';
+import { processDocument, type PipelineMode } from './api/documentApi';
 import UploadPanel from './components/UploadPanel';
 import ProcessingPanel from './components/ProcessingPanel';
 import DocumentViewer from './components/DocumentViewer';
@@ -16,13 +16,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [showHistory, setShowHistory] = useState(false);
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (file: File, mode: PipelineMode = 'full') => {
     setCurrentFile(file);
     setAppState('processing');
     setError(null);
 
     try {
-      const data = await processDocument(file);
+      const data = await processDocument(file, mode);
       if (data.error && !data.doc_id) {
         setError(data.error);
         setAppState('upload');

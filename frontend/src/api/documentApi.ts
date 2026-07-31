@@ -6,11 +6,15 @@ const api = axios.create({
   timeout: 120000,
 });
 
-export async function processDocument(file: File): Promise<ProcessResult> {
+export type PipelineMode = 'full' | 'llm';
+
+export async function processDocument(file: File, mode: PipelineMode = 'full'): Promise<ProcessResult> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await api.post<ProcessResult>('/api/process', formData, {
+  const endpoint = mode === 'llm' ? '/api/process-llm' : '/api/process';
+
+  const response = await api.post<ProcessResult>(endpoint, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
