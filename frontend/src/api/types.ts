@@ -386,10 +386,14 @@ export interface Summary {
 }
 
 export interface Summaries {
-  clinician: Summary;
-  patient: Summary;
-  pharmacist: Summary;
-  follow_up_actions: string;
+  bullet_summary?: string[];
+  clinician_summary?: string;
+  patient_summary?: string;
+  pharmacist_summary?: string;
+  clinician?: Summary;
+  patient?: Summary;
+  pharmacist?: Summary;
+  follow_up_actions?: string;
 }
 
 /**

@@ -9333,7 +9333,15 @@ def run_llm_direct_pipeline(doc_id: str, upload_path: Path) -> dict:
     }
 
     # Summaries
+    bullet_summary = llm_result.get("bullet_summary", [])
+    # Ensure it's a list of max 4 bullets
+    if isinstance(bullet_summary, list):
+        bullet_summary = bullet_summary[:4]
+    else:
+        bullet_summary = []
+
     result["summaries"] = {
+        "bullet_summary": bullet_summary,
         "clinician_summary": llm_result.get("clinician_summary", ""),
         "patient_summary": llm_result.get("patient_summary", ""),
         "pharmacist_summary": llm_result.get("pharmacist_summary", ""),
@@ -9417,6 +9425,12 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
     {{"term": "diagnosis", "snomed_code": "code", "snomed_description": "description"}}
   ],
 
+  "bullet_summary": [
+    "Patient demographics + primary diagnosis (e.g., 'Female patient dx: Haemorrhoids')",
+    "Procedure performed (e.g., 'Procedure: EUA, flexible sigmoidoscopy')",
+    "Medications/prescriptions (e.g., 'Rx: Continue lansoprazole, naproxen')",
+    "Follow-up plan (e.g., 'F/U: Telephone appointment 6 weeks')"
+  ],
   "clinician_summary": "2-3 sentence clinical summary for GP",
   "patient_summary": "Simple summary for patient to understand",
   "pharmacist_summary": "Medication-focused summary",

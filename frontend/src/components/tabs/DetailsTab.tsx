@@ -31,7 +31,11 @@ function mapLetterTypeToBucket(letterType: string): string {
 }
 
 export default function DetailsTab({ result }: DetailsTabProps) {
-  const summary = result.summaries?.clinician?.summary || 'Not available';
+  // Handle both new bullet_summary array and old clinician.summary string
+  const bulletSummary = result.summaries?.bullet_summary;
+  const clinicianSummary = result.summaries?.clinician_summary || result.summaries?.clinician?.summary;
+  const hasBulletSummary = Array.isArray(bulletSummary) && bulletSummary.length > 0;
+  const summary = hasBulletSummary ? bulletSummary.join('\n') : (clinicianSummary || 'Not available');
   const predictedRaw = result.letter_type || '';  // e.g. "ED Discharge Letter"
   const predictedBucket = mapLetterTypeToBucket(predictedRaw);
 
@@ -61,8 +65,17 @@ export default function DetailsTab({ result }: DetailsTabProps) {
           >
             📋
           </button>
-          {/* Render bullet points as list if summary contains them */}
-          {summary.includes('- ') ? (
+          {/* Render bullet points as list */}
+          {hasBulletSummary ? (
+            <ul className="space-y-1.5">
+              {bulletSummary.map((line, i) => (
+                <li key={i} className="text-sm flex items-start gap-2">
+                  <span className="text-nhs-blue font-bold">•</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          ) : summary.includes('- ') ? (
             <ul className="list-disc list-inside space-y-1">
               {summary.split('\n').filter(line => line.trim()).map((line, i) => (
                 <li key={i} className="text-sm">
