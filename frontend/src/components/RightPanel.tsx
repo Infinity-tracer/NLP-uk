@@ -52,7 +52,7 @@ export default function RightPanel({ result }: RightPanelProps) {
   };
 
   return (
-    <div className="w-full h-full bg-gray-50/30 overflow-y-auto p-3">
+    <div className="w-full h-full bg-white overflow-y-auto p-4 rounded-xl">
       {/* Patient Info - Collapsible */}
       <CollapsibleSection title="Patient Info" icon={<IconUser size={14} />} defaultOpen={true}>
         <div className="space-y-3">

@@ -31,7 +31,7 @@ export default function DetailsPanel({
   const isHighConf = result.unified_confidence >= threshold;
 
   return (
-    <div className="w-full h-full border-r border-gray-200 flex flex-col overflow-hidden bg-white">
+    <div className="w-full h-full flex flex-col overflow-hidden bg-white rounded-xl">
       {/* Tabs */}
       <div className="flex gap-2 px-4 pt-4 pb-3 border-b border-gray-100 bg-gray-50/50 flex-wrap">
         {TABS.map((tab) => (

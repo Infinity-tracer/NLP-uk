@@ -51,9 +51,9 @@ export default function DocumentViewer({ result, file }: DocumentViewerProps) {
   );
 
   return (
-    <div className="w-full h-full bg-white flex flex-col overflow-hidden">
+    <div className="w-full h-full bg-white flex flex-col overflow-hidden rounded-xl">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-200 bg-gray-50/30">
+      <div className="px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-[#1977cc]">
             <IconDocument size={20} />
