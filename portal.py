@@ -9407,9 +9407,9 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
   "nhs_number": "NHS number if present",
   "patient_sex": "Male/Female",
   "patient_address": "Patient address",
-  "consultant": "Consultant name",
-  "department": "Department name",
-  "hospital": "Hospital name",
+  "consultant": "Consultant name only (e.g. 'Dr Smith' not 'Consultant Dr Smith')",
+  "department": "Department name only (e.g. 'Ophthalmology' not 'Department of Ophthalmology')",
+  "hospital": "Hospital name only (e.g. 'Berkshire Healthcare' not 'Berkshire Healthcare NHS Foundation Trust')",
   "gp_practice": "GP practice name if mentioned",
 
   "problems": [
