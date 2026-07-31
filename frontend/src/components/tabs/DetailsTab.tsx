@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ProcessResult } from '../../api/types';
 import { LETTER_TYPE_BUCKETS } from '../../api/types';
+import CollapsibleSection from '../CollapsibleSection';
 
 interface DetailsTabProps {
   result: ProcessResult;
@@ -31,46 +32,40 @@ function mapLetterTypeToBucket(letterType: string): string {
 }
 
 export default function DetailsTab({ result }: DetailsTabProps) {
-  // Handle both new bullet_summary array and old clinician.summary string
   const bulletSummary = result.summaries?.bullet_summary;
   const clinicianSummary = result.summaries?.clinician_summary || result.summaries?.clinician?.summary;
   const hasBulletSummary = Array.isArray(bulletSummary) && bulletSummary.length > 0;
   const summary = hasBulletSummary ? bulletSummary.join('\n') : (clinicianSummary || 'Not available');
-  const predictedRaw = result.letter_type || '';  // e.g. "ED Discharge Letter"
+  const predictedRaw = result.letter_type || '';
   const predictedBucket = mapLetterTypeToBucket(predictedRaw);
 
-  // Show the raw predicted type directly, user can override with bucket options
   const [selectedValue, setSelectedValue] = useState(predictedRaw || predictedBucket);
-  // Use comprehensive extraction fields (event_date, letter_date) first, fallback to structured fields
   const [eventDate, setEventDate] = useState(result.event_date || result.structured?.admission_date || '');
   const [letterDate, setLetterDate] = useState(result.letter_date || result.structured?.discharge_date || result.structured?.appointment_date || '');
   const [sender, setSender] = useState(result.hospital_trust || result.structured?.hospital || result.structured?.admission_method || '');
   const [consultant, setConsultant] = useState(result.structured?.consultant || '');
   const [department, setDepartment] = useState(result.structured?.department || '');
-  // Use comprehensive extraction conclusion first, fallback to structured fields
   const [conclusion, setConclusion] = useState(result.conclusion || result.structured?.diagnosis_text || result.structured?.indication || result.structured?.impression || '');
 
   const isOverride = selectedValue !== predictedRaw && selectedValue !== predictedBucket;
 
   return (
-    <div className="space-y-4">
-      {/* Summary */}
-      <div>
-        <label className="field-label">Summary</label>
+    <div className="space-y-3">
+      {/* Summary - Collapsible */}
+      <CollapsibleSection title="Summary" icon="📋" defaultOpen={true}>
         <div className="summary-box relative">
           <button
-            className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+            className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 transition-colors"
             onClick={() => navigator.clipboard.writeText(summary)}
             title="Copy"
           >
             📋
           </button>
-          {/* Render bullet points as list */}
           {hasBulletSummary ? (
             <ul className="space-y-1.5">
               {bulletSummary.map((line, i) => (
                 <li key={i} className="text-sm flex items-start gap-2">
-                  <span className="text-nhs-blue font-bold">•</span>
+                  <span className="text-[#1977cc] font-bold">•</span>
                   <span>{line}</span>
                 </li>
               ))}
@@ -87,112 +82,116 @@ export default function DetailsTab({ result }: DetailsTabProps) {
             <span style={{ whiteSpace: 'pre-line' }}>{summary}</span>
           )}
         </div>
-      </div>
+      </CollapsibleSection>
 
-      {/* Letter Type */}
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <label className="field-label mb-0">Letter type</label>
-          {!isOverride && predictedRaw && (
-            <span className="text-[10px] font-bold tracking-wide bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+      {/* Letter Type - Collapsible */}
+      <CollapsibleSection
+        title="Letter Type"
+        icon="📑"
+        defaultOpen={true}
+        badge={
+          !isOverride && predictedRaw ? (
+            <span className="text-[10px] font-bold tracking-wide bg-[#059652]/10 text-[#059652] border border-[#059652]/20 px-2 py-0.5 rounded-full ml-2">
               Auto-detected
             </span>
-          )}
-          {isOverride && (
-            <span className="text-[10px] font-bold tracking-wide bg-yellow-100 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full">
+          ) : isOverride ? (
+            <span className="text-[10px] font-bold tracking-wide bg-[#ffc107]/10 text-[#b38600] border border-[#ffc107]/30 px-2 py-0.5 rounded-full ml-2">
               Manual override
             </span>
-          )}
+          ) : null
+        }
+      >
+        <div>
           {isOverride && predictedRaw && (
             <button
               onClick={() => setSelectedValue(predictedRaw)}
-              className="text-xs text-nhs-blue hover:underline ml-2"
+              className="text-xs text-[#1977cc] hover:underline mb-2 block"
             >
-              Reset
+              Reset to auto-detected
             </button>
           )}
+          <select
+            value={selectedValue}
+            onChange={(e) => setSelectedValue(e.target.value)}
+            className="field-input cursor-pointer"
+          >
+            {predictedRaw && (
+              <option value={predictedRaw}>{predictedRaw}</option>
+            )}
+            <option value="" disabled>── Or select category ──</option>
+            {LETTER_TYPE_BUCKETS.map((bucket) => (
+              <option key={bucket.key} value={bucket.label}>
+                {bucket.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[10px] text-gray-400 mt-1.5">
+            Change if needed.
+          </p>
         </div>
-        <select
-          value={selectedValue}
-          onChange={(e) => setSelectedValue(e.target.value)}
-          className="field-input cursor-pointer"
-        >
-          {/* Show the predicted raw type as first option */}
-          {predictedRaw && (
-            <option value={predictedRaw}>{predictedRaw}</option>
-          )}
-          <option value="" disabled>── Or select category ──</option>
-          {LETTER_TYPE_BUCKETS.map((bucket) => (
-            <option key={bucket.key} value={bucket.label}>
-              {bucket.label}
-            </option>
-          ))}
-        </select>
-        <p className="text-[10px] text-gray-400 mt-1">
-          Change if needed.
-        </p>
-      </div>
+      </CollapsibleSection>
 
-      {/* Date fields */}
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label className="field-label">Event Date</label>
-          <input
-            type="text"
-            value={eventDate}
-            onChange={(e) => setEventDate(e.target.value)}
-            placeholder="DD/MM/YYYY"
-            className="field-input"
-          />
+      {/* Dates - Collapsible */}
+      <CollapsibleSection title="Dates" icon="📅" defaultOpen={true}>
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="field-label">Event Date</label>
+            <input
+              type="text"
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
+              placeholder="DD/MM/YYYY"
+              className="field-input"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="field-label">Letter Date</label>
+            <input
+              type="text"
+              value={letterDate}
+              onChange={(e) => setLetterDate(e.target.value)}
+              placeholder="DD/MM/YYYY"
+              className="field-input"
+            />
+          </div>
         </div>
-        <div className="flex-1">
-          <label className="field-label">Letter Date</label>
-          <input
-            type="text"
-            value={letterDate}
-            onChange={(e) => setLetterDate(e.target.value)}
-            placeholder="DD/MM/YYYY"
-            className="field-input"
-          />
+      </CollapsibleSection>
+
+      {/* Sender & Consultant - Collapsible */}
+      <CollapsibleSection title="Sender Details" icon="🏥" defaultOpen={true}>
+        <div className="space-y-3">
+          <div>
+            <label className="field-label">Sender Name</label>
+            <input
+              type="text"
+              value={sender}
+              onChange={(e) => setSender(e.target.value)}
+              className="field-input"
+            />
+          </div>
+          <div>
+            <label className="field-label">Consultant Name</label>
+            <input
+              type="text"
+              value={consultant}
+              onChange={(e) => setConsultant(e.target.value)}
+              className="field-input"
+            />
+          </div>
+          <div>
+            <label className="field-label">Department</label>
+            <input
+              type="text"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="field-input"
+            />
+          </div>
         </div>
-      </div>
+      </CollapsibleSection>
 
-      {/* Sender */}
-      <div>
-        <label className="field-label">Sender Name</label>
-        <input
-          type="text"
-          value={sender}
-          onChange={(e) => setSender(e.target.value)}
-          className="field-input"
-        />
-      </div>
-
-      {/* Consultant */}
-      <div>
-        <label className="field-label">Consultant Name</label>
-        <input
-          type="text"
-          value={consultant}
-          onChange={(e) => setConsultant(e.target.value)}
-          className="field-input"
-        />
-      </div>
-
-      {/* Department */}
-      <div>
-        <label className="field-label">Department</label>
-        <input
-          type="text"
-          value={department}
-          onChange={(e) => setDepartment(e.target.value)}
-          className="field-input"
-        />
-      </div>
-
-      {/* Conclusion */}
-      <div>
-        <label className="field-label">Conclusion</label>
+      {/* Conclusion - Collapsible */}
+      <CollapsibleSection title="Conclusion" icon="✅" defaultOpen={true}>
         <textarea
           value={conclusion}
           onChange={(e) => setConclusion(e.target.value)}
@@ -200,7 +199,7 @@ export default function DetailsTab({ result }: DetailsTabProps) {
           rows={3}
           className="field-input resize-y"
         />
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }

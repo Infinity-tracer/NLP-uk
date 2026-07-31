@@ -15,6 +15,7 @@ export default function App() {
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [showHistory, setShowHistory] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   const handleFileUpload = useCallback(async (file: File, mode: PipelineMode = 'full') => {
     setCurrentFile(file);
@@ -62,39 +63,79 @@ export default function App() {
     setShowHistory(false);
   }, []);
 
+  const sidebarItems = [
+    { id: 'upload', icon: '📤', label: 'New Upload', onClick: handleReset, active: appState === 'upload' },
+    { id: 'history', icon: '📋', label: 'History', onClick: () => setShowHistory(true), active: false },
+    { id: 'documents', icon: '📄', label: 'Documents', onClick: () => {}, active: false },
+    { id: 'settings', icon: '⚙️', label: 'Settings', onClick: () => {}, active: false },
+  ];
+
   return (
     <div className="h-screen flex overflow-hidden">
-      {/* Sidebar - MediLab Style */}
-      <aside className="w-16 bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-medilab-lg">
-        <div className="w-11 h-11 bg-[#1977cc] rounded-full flex items-center justify-center mb-4 shadow-md">
-          <span className="text-white font-black text-xs tracking-tight font-heading">NHS</span>
+      {/* Sidebar - Collapsible MediLab Style */}
+      <aside
+        className={`bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-medilab-lg transition-all duration-300 ${
+          sidebarExpanded ? 'w-48' : 'w-16'
+        }`}
+        onMouseEnter={() => setSidebarExpanded(true)}
+        onMouseLeave={() => setSidebarExpanded(false)}
+      >
+        {/* Logo */}
+        <div className={`flex items-center gap-3 mb-4 px-2 ${sidebarExpanded ? 'w-full justify-start pl-3' : 'justify-center'}`}>
+          <div className="w-11 h-11 bg-[#1977cc] rounded-full flex items-center justify-center shadow-md flex-shrink-0">
+            <span className="text-white font-black text-xs tracking-tight font-heading">NHS</span>
+          </div>
+          {sidebarExpanded && (
+            <span className="text-white font-semibold text-sm font-heading whitespace-nowrap animate-fade-in">
+              Doc Portal
+            </span>
+          )}
         </div>
-        <button
-          onClick={handleReset}
-          className={`w-11 h-11 rounded-full flex items-center justify-center text-white mb-2 transition-all duration-300 ${
-            appState === 'upload' ? 'opacity-100 bg-[#1977cc]' : 'opacity-70 hover:opacity-100 hover:bg-[#1977cc]'
-          }`}
-          title="New Upload"
-        >
-          <span className="text-xl">📤</span>
-        </button>
-        <button
-          onClick={() => setShowHistory(true)}
-          className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300"
-          title="History"
-        >
-          <span className="text-xl">📋</span>
-        </button>
-        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300" title="Documents">
-          <span className="text-xl">📄</span>
-        </button>
-        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300" title="Settings">
-          <span className="text-xl">⚙️</span>
-        </button>
+
+        {/* Navigation Items */}
+        {sidebarItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={item.onClick}
+            className={`flex items-center gap-3 mb-2 transition-all duration-300 ${
+              sidebarExpanded
+                ? 'w-full px-3 py-2.5 rounded-lg mx-2 justify-start'
+                : 'w-11 h-11 rounded-full justify-center'
+            } ${
+              item.active
+                ? 'bg-[#1977cc] text-white'
+                : 'text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc]'
+            }`}
+            title={item.label}
+          >
+            <span className="text-xl flex-shrink-0">{item.icon}</span>
+            {sidebarExpanded && (
+              <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>
+            )}
+          </button>
+        ))}
+
         <div className="flex-1" />
-        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] transition-all duration-300" title="Profile">
-          <span className="text-xl">👤</span>
+
+        {/* Profile */}
+        <button
+          className={`flex items-center gap-3 transition-all duration-300 ${
+            sidebarExpanded
+              ? 'w-full px-3 py-2.5 rounded-lg mx-2 justify-start'
+              : 'w-11 h-11 rounded-full justify-center'
+          } text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc]`}
+          title="Profile"
+        >
+          <span className="text-xl flex-shrink-0">👤</span>
+          {sidebarExpanded && (
+            <span className="text-sm font-medium whitespace-nowrap">Profile</span>
+          )}
         </button>
+
+        {/* Collapse indicator */}
+        <div className={`mt-3 text-white/50 text-xs transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>
+          ← Collapse
+        </div>
       </aside>
 
       {/* Main content */}

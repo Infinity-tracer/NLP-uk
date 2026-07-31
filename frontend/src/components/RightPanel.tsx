@@ -1,4 +1,5 @@
 import type { ProcessResult } from '../api/types';
+import CollapsibleSection from './CollapsibleSection';
 
 interface RightPanelProps {
   result: ProcessResult;
@@ -50,13 +51,9 @@ export default function RightPanel({ result }: RightPanelProps) {
   };
 
   return (
-    <div className="w-[300px] bg-white overflow-y-auto shadow-medilab">
-      {/* Patient Info - MediLab Style */}
-      <section className="border-b border-gray-100 p-5">
-        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
-          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">👤</span>
-          Patient Info
-        </h4>
+    <div className="w-[300px] bg-gray-50/30 overflow-y-auto p-3">
+      {/* Patient Info - Collapsible */}
+      <CollapsibleSection title="Patient Info" icon="👤" defaultOpen={true}>
         <div className="space-y-3">
           <div className="info-row">
             <span className="info-label">Patient Name</span>
@@ -93,14 +90,10 @@ export default function RightPanel({ result }: RightPanelProps) {
             </div>
           )}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      {/* Document Info - MediLab Style */}
-      <section className="border-b border-gray-100 p-5">
-        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
-          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">📄</span>
-          Document Info
-        </h4>
+      {/* Document Info - Collapsible */}
+      <CollapsibleSection title="Document Info" icon="📄" defaultOpen={true}>
         <div className="space-y-3">
           <div className="info-row">
             <span className="info-label">Name</span>
@@ -145,15 +138,11 @@ export default function RightPanel({ result }: RightPanelProps) {
             </div>
           )}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      {/* Clinical Specifics - MediLab Style */}
+      {/* Clinical Specifics - Collapsible */}
       {Object.keys(specs).length > 0 && (
-        <section className="border-b border-gray-100 p-5">
-          <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
-            <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">🏥</span>
-            Clinical Specifics
-          </h4>
+        <CollapsibleSection title="Clinical Specifics" icon="🏥" defaultOpen={false}>
           <div className="space-y-3">
             {Object.entries(specs).map(([key, value]) => {
               const label = CLINICAL_SPECIFICS_LABELS[key] || key.replace(/_/g, ' ');
@@ -168,15 +157,11 @@ export default function RightPanel({ result }: RightPanelProps) {
               );
             })}
           </div>
-        </section>
+        </CollapsibleSection>
       )}
 
-      {/* Pipeline Stages - MediLab Style */}
-      <section className="p-5">
-        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
-          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">⚙️</span>
-          Pipeline Stages
-        </h4>
+      {/* Pipeline Stages - Collapsible */}
+      <CollapsibleSection title="Pipeline Stages" icon="⚙️" defaultOpen={false}>
         <div className="space-y-2">
           {Object.entries(stages).map(([key, stage]) => {
             if (!stage) return null;
@@ -202,7 +187,7 @@ export default function RightPanel({ result }: RightPanelProps) {
             );
           })}
         </div>
-      </section>
+      </CollapsibleSection>
     </div>
   );
 }
