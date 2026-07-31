@@ -9390,7 +9390,7 @@ def _call_llm_for_extraction(text: str) -> dict:
 CRITICAL RULES:
 1. Extract ONLY information from the CURRENT encounter - NOT historical/past medical history
 2. For SNOMED codes: provide the most specific SNOMED CT code you know
-3. For bullet_summary: Write ACTUAL content from the document - NOT format instructions or examples
+3. For bullet_summary: MAXIMUM 10 words per bullet. Keep it crisp like: "Female patient dx: Haemorrhoids, elective"
 3. If a field has no information, use empty string "" or empty array []
 4. Dates should be in DD/MM/YYYY format
 
@@ -9429,10 +9429,10 @@ Return a JSON object with this EXACT structure (no markdown, no explanation):
   ],
 
   "bullet_summary": [
-    "ACTUAL CONTENT: e.g. 'Female patient dx: Haemorrhoids, elective admission'",
-    "ACTUAL CONTENT: e.g. 'Procedure: EUA, flexible sigmoidoscopy, phenol injection'",
-    "ACTUAL CONTENT: e.g. 'Rx: Continue lansoprazole 30mg, paracetamol PRN'",
-    "ACTUAL CONTENT: e.g. 'F/U: Telephone clinic 6 weeks'"
+    "SHORT: 'Female patient dx: Haemorrhoids' - MAX 10 words",
+    "SHORT: 'Procedure: EUA, sigmoidoscopy, phenol injection' - MAX 10 words",
+    "SHORT: 'Rx: Lansoprazole, naproxen, paracetamol' - MAX 10 words",
+    "SHORT: 'F/U: Telephone 6 weeks' - MAX 10 words"
   ],
   "clinician_summary": "2-3 sentence clinical summary for GP",
   "patient_summary": "Simple summary for patient to understand",
