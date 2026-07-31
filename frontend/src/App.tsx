@@ -64,15 +64,15 @@ export default function App() {
 
   return (
     <div className="h-screen flex overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-16 bg-nhs-dark flex flex-col items-center py-3 flex-shrink-0">
-        <div className="w-11 h-11 bg-nhs-blue rounded-lg flex items-center justify-center mb-4">
-          <span className="text-white font-black text-sm tracking-tight">NHS</span>
+      {/* Sidebar - MediLab Style */}
+      <aside className="w-16 bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-medilab-lg">
+        <div className="w-11 h-11 bg-[#1977cc] rounded-full flex items-center justify-center mb-4 shadow-md">
+          <span className="text-white font-black text-xs tracking-tight font-heading">NHS</span>
         </div>
         <button
           onClick={handleReset}
-          className={`w-11 h-11 rounded-lg flex items-center justify-center text-white mb-1 ${
-            appState === 'upload' ? 'opacity-100 bg-white/15' : 'opacity-70 hover:opacity-100 hover:bg-white/15'
+          className={`w-11 h-11 rounded-full flex items-center justify-center text-white mb-2 transition-all duration-300 ${
+            appState === 'upload' ? 'opacity-100 bg-[#1977cc]' : 'opacity-70 hover:opacity-100 hover:bg-[#1977cc]'
           }`}
           title="New Upload"
         >
@@ -80,33 +80,33 @@ export default function App() {
         </button>
         <button
           onClick={() => setShowHistory(true)}
-          className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1"
+          className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300"
           title="History"
         >
           <span className="text-xl">📋</span>
         </button>
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Documents">
+        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300" title="Documents">
           <span className="text-xl">📄</span>
         </button>
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15 mb-1" title="Settings">
+        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] mb-2 transition-all duration-300" title="Settings">
           <span className="text-xl">⚙️</span>
         </button>
         <div className="flex-1" />
-        <button className="w-11 h-11 rounded-lg flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-white/15" title="Profile">
+        <button className="w-11 h-11 rounded-full flex items-center justify-center text-white opacity-70 hover:opacity-100 hover:bg-[#1977cc] transition-all duration-300" title="Profile">
           <span className="text-xl">👤</span>
         </button>
       </aside>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Top bar */}
-        <header className="h-[52px] bg-white border-b-2 border-nhs-blue flex items-center px-5 flex-shrink-0">
-          <h1 className="text-sm font-semibold text-nhs-dark flex-1">
+        {/* Top bar - MediLab Style */}
+        <header className="h-[56px] bg-white border-b border-gray-100 flex items-center px-6 flex-shrink-0 shadow-medilab-header">
+          <h1 className="text-base font-semibold text-[#2c4964] flex-1 font-heading">
             {appState === 'result' ? 'View Document' : appState === 'processing' ? `Processing: ${currentFile?.name || 'Document'}` : 'Document Extraction Portal'}
           </h1>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span>Admin A A</span>
-            <div className="w-8 h-8 rounded-full bg-nhs-blue text-white flex items-center justify-center font-bold text-sm">
+          <div className="flex items-center gap-3 text-sm text-[#444444]">
+            <span className="font-medium">Admin A A</span>
+            <div className="w-9 h-9 rounded-full bg-[#1977cc] text-white flex items-center justify-center font-bold text-sm shadow-md">
               AA
             </div>
           </div>
@@ -137,11 +137,11 @@ export default function App() {
           )}
         </main>
 
-        {/* New upload button */}
+        {/* New upload button - MediLab Style */}
         {appState === 'result' && (
           <button
             onClick={handleReset}
-            className="fixed bottom-6 right-6 bg-nhs-blue text-white px-5 py-3 rounded-lg font-semibold shadow-lg hover:bg-nhs-dark transition-colors z-50"
+            className="fixed bottom-6 right-6 bg-[#1977cc] text-white px-6 py-3 rounded-pill font-semibold shadow-medilab-lg hover:bg-[#2c4964] transition-all duration-300 z-50 font-nav"
           >
             + New Document
           </button>

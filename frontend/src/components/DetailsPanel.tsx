@@ -30,9 +30,9 @@ export default function DetailsPanel({
   const isHighConf = result.unified_confidence >= threshold;
 
   return (
-    <div className="w-[400px] border-r border-gray-200 flex flex-col overflow-hidden bg-white">
-      {/* Tabs */}
-      <div className="flex gap-1.5 px-3 pt-3 pb-2 border-b border-gray-200 bg-gray-50 flex-wrap">
+    <div className="w-[420px] border-r border-gray-100 flex flex-col overflow-hidden bg-white shadow-medilab">
+      {/* Tabs - MediLab Style */}
+      <div className="flex gap-2 px-4 pt-4 pb-3 border-b border-gray-100 bg-gray-50/50 flex-wrap">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -45,15 +45,17 @@ export default function DetailsPanel({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {/* Alert banner */}
+      <div className="flex-1 overflow-y-auto p-5">
+        {/* Alert banner - MediLab Style */}
         {isHighConf ? (
-          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 mb-4">
-            ✅ High confidence — outputs auto-generated. Review and click Approve to confirm.
+          <div className="flex items-center gap-3 p-4 bg-[#059652]/5 border border-[#059652]/20 rounded-lg text-sm text-[#059652] mb-5">
+            <span className="w-6 h-6 bg-[#059652]/10 rounded-full flex items-center justify-center flex-shrink-0">✅</span>
+            <span>High confidence — outputs auto-generated. Review and click Approve to confirm.</span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 mb-4">
-            ⚠️ Confidence below threshold — outputs generated, please review before approving
+          <div className="flex items-center gap-3 p-4 bg-[#ffc107]/5 border border-[#ffc107]/30 rounded-lg text-sm text-[#b38600] mb-5">
+            <span className="w-6 h-6 bg-[#ffc107]/10 rounded-full flex items-center justify-center flex-shrink-0">⚠️</span>
+            <span>Confidence below threshold — outputs generated, please review before approving</span>
           </div>
         )}
 
@@ -63,13 +65,13 @@ export default function DetailsPanel({
         {activeTab === 'gpactions' && <GPActionsTab result={result} />}
       </div>
 
-      {/* Action bar */}
-      <div className="p-3 border-t border-gray-200 flex gap-2 flex-wrap">
-        <button className="btn-secondary text-sm py-1.5 px-3">Assign</button>
-        <button onClick={onReset} className="btn-secondary text-sm py-1.5 px-3">Refresh</button>
-        <button onClick={onDownload} className="btn-secondary text-sm py-1.5 px-3">Download</button>
-        <button className="btn-success text-sm py-1.5 px-3">✓ Approve</button>
-        <button className="btn-primary text-sm py-1.5 px-3">Save to record</button>
+      {/* Action bar - MediLab Style */}
+      <div className="p-4 border-t border-gray-100 bg-gray-50/30 flex gap-2 flex-wrap">
+        <button className="btn-secondary text-sm py-2 px-4">Assign</button>
+        <button onClick={onReset} className="btn-secondary text-sm py-2 px-4">Refresh</button>
+        <button onClick={onDownload} className="btn-secondary text-sm py-2 px-4">Download</button>
+        <button className="btn-success text-sm py-2 px-4">✓ Approve</button>
+        <button className="btn-primary text-sm py-2 px-4">Save to record</button>
       </div>
     </div>
   );

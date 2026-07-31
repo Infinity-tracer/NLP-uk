@@ -74,68 +74,80 @@ export default function HistoryPanel({ onSelectRun, onClose }: HistoryPanelProps
   const getConfidenceBadge = (confidence: number) => {
     const percent = Math.round(confidence * 100);
     if (confidence >= 0.75) {
-      return <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">{percent}%</span>;
+      return <span className="px-3 py-1 rounded-pill text-xs font-medium bg-[#059652]/10 text-[#059652] border border-[#059652]/20">{percent}%</span>;
     } else if (confidence >= 0.5) {
-      return <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">{percent}%</span>;
+      return <span className="px-3 py-1 rounded-pill text-xs font-medium bg-[#ffc107]/10 text-[#b38600] border border-[#ffc107]/30">{percent}%</span>;
     }
-    return <span className="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">{percent}%</span>;
+    return <span className="px-3 py-1 rounded-pill text-xs font-medium bg-[#df1529]/10 text-[#df1529] border border-[#df1529]/20">{percent}%</span>;
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+      <div className="bg-white rounded-lg shadow-medilab-lg w-full max-w-3xl max-h-[80vh] flex flex-col">
+        {/* Header - MediLab Style */}
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Processing History</h2>
-            <p className="text-sm text-gray-500">{runs.length} saved runs</p>
+            <h2 className="text-xl font-semibold text-[#2c4964] font-heading">Processing History</h2>
+            <p className="text-sm text-[#768692] mt-1">{runs.length} saved runs</p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
+            className="w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#768692] hover:text-[#2c4964] transition-all duration-300"
           >
-            ✕
+            <span className="text-xl">✕</span>
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-5">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+            <div className="flex items-center justify-center py-16">
+              <div className="relative">
+                <div className="w-12 h-12 border-4 border-[#1977cc]/20 rounded-full" />
+                <div className="absolute top-0 left-0 w-12 h-12 border-4 border-transparent border-t-[#1977cc] rounded-full animate-spin" />
+              </div>
             </div>
           ) : error ? (
-            <div className="text-center py-12 text-red-500">{error}</div>
+            <div className="text-center py-16">
+              <div className="w-16 h-16 mx-auto mb-4 bg-[#df1529]/10 rounded-full flex items-center justify-center">
+                <span className="text-3xl">⚠️</span>
+              </div>
+              <div className="text-[#df1529] font-medium">{error}</div>
+            </div>
           ) : runs.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <div className="text-4xl mb-3">📭</div>
-              <div>No processing runs yet</div>
-              <div className="text-sm mt-1">Upload a document to get started</div>
+            <div className="text-center py-16">
+              <div className="w-20 h-20 mx-auto mb-4 bg-[#1977cc]/10 rounded-full flex items-center justify-center">
+                <span className="text-4xl">📭</span>
+              </div>
+              <div className="text-[#2c4964] font-medium font-heading">No processing runs yet</div>
+              <div className="text-sm text-[#768692] mt-2">Upload a document to get started</div>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {runs.map((run) => (
                 <div
                   key={run.doc_id}
                   onClick={() => handleSelect(run.doc_id)}
-                  className={`p-4 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors ${
+                  className={`p-5 rounded-lg border border-gray-100 hover:border-[#1977cc]/30 hover:shadow-medilab cursor-pointer transition-all duration-300 ${
                     loadingId === run.doc_id ? 'opacity-50' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">📄</span>
-                        <span className="font-medium text-gray-900 truncate">{run.filename}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#1977cc]/10 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-lg">📄</span>
+                        </div>
+                        <span className="font-medium text-[#2c4964] truncate font-heading">{run.filename}</span>
                         {getConfidenceBadge(run.unified_confidence)}
                       </div>
-                      <div className="mt-1 text-sm text-gray-500 flex items-center gap-3">
+                      <div className="mt-2 text-sm text-[#768692] flex items-center gap-3 ml-13">
                         <span>{formatDate(run.processed_at)}</span>
-                        <span>•</span>
+                        <span className="text-[#1977cc]">•</span>
                         <span>{run.pages_processed} page{run.pages_processed !== 1 ? 's' : ''}</span>
                         {run.letter_type && (
                           <>
-                            <span>•</span>
+                            <span className="text-[#1977cc]">•</span>
                             <span className="truncate">{run.letter_type}</span>
                           </>
                         )}
@@ -143,17 +155,17 @@ export default function HistoryPanel({ onSelectRun, onClose }: HistoryPanelProps
                     </div>
                     <div className="flex items-center gap-2 ml-4">
                       {loadingId === run.doc_id ? (
-                        <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full" />
+                        <div className="w-8 h-8 border-2 border-[#1977cc] border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
                           <button
                             onClick={(e) => handleDelete(run.doc_id, e)}
-                            className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                            className="w-9 h-9 rounded-full hover:bg-[#df1529]/10 flex items-center justify-center text-[#768692] hover:text-[#df1529] transition-all duration-300"
                             title="Delete"
                           >
                             🗑️
                           </button>
-                          <span className="text-gray-400">→</span>
+                          <span className="text-[#1977cc] text-lg">→</span>
                         </>
                       )}
                     </div>
@@ -164,11 +176,11 @@ export default function HistoryPanel({ onSelectRun, onClose }: HistoryPanelProps
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+        {/* Footer - MediLab Style */}
+        <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-medium transition-colors"
+            className="btn-secondary"
           >
             Close
           </button>

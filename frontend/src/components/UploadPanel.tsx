@@ -42,10 +42,13 @@ export default function UploadPanel({ onFileUpload, error }: UploadPanelProps) {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8">
+    <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in">
+      {/* Upload Card - MediLab Style */}
       <div
-        className={`bg-white rounded-xl border-2 border-dashed p-12 max-w-xl w-full text-center cursor-pointer transition-all ${
-          isDragging ? 'border-nhs-dark bg-blue-50' : 'border-nhs-blue hover:border-nhs-dark hover:bg-blue-50/50'
+        className={`bg-white rounded-lg p-12 max-w-xl w-full text-center cursor-pointer transition-all duration-300 ${
+          isDragging
+            ? 'border-2 border-[#1977cc] bg-[#1977cc]/5 shadow-medilab-lg'
+            : 'border-2 border-dashed border-gray-300 hover:border-[#1977cc] hover:shadow-medilab'
         }`}
         onDragOver={handleDragOver}
         onDragEnter={handleDragOver}
@@ -53,9 +56,11 @@ export default function UploadPanel({ onFileUpload, error }: UploadPanelProps) {
         onDrop={handleDrop}
         onClick={handleClick}
       >
-        <div className="text-5xl mb-4">📋</div>
-        <h2 className="text-xl font-semibold text-nhs-dark mb-2">Upload Clinical Document</h2>
-        <p className="text-gray-500 text-sm mb-5">
+        <div className="w-20 h-20 mx-auto mb-5 bg-[#1977cc]/10 rounded-full flex items-center justify-center">
+          <span className="text-4xl">📋</span>
+        </div>
+        <h2 className="text-2xl font-semibold text-[#2c4964] mb-3 font-heading">Upload Clinical Document</h2>
+        <p className="text-[#444444] text-sm mb-6 leading-relaxed">
           Drop a medical document here or click to browse.<br />
           The pipeline runs fully automatically.
         </p>
@@ -67,23 +72,24 @@ export default function UploadPanel({ onFileUpload, error }: UploadPanelProps) {
           onChange={handleFileChange}
           className="hidden"
         />
-        <p className="text-xs text-gray-400 mt-3">
+        <p className="text-xs text-gray-400 mt-4">
           Supported: JPEG, PNG, PDF, TIFF
         </p>
       </div>
 
+      {/* Error Message - MediLab Style */}
       {error && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm max-w-xl w-full">
-          Error: {error}
+        <div className="mt-4 p-4 bg-[#df1529]/5 border border-[#df1529]/20 rounded-lg text-[#df1529] text-sm max-w-xl w-full">
+          <span className="font-semibold">Error:</span> {error}
         </div>
       )}
 
-      {/* Pipeline Overview */}
-      <div className="mt-6 max-w-xl w-full">
-        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide text-center mb-3">
+      {/* Pipeline Overview - MediLab Style */}
+      <div className="mt-8 max-w-xl w-full">
+        <div className="text-xs font-bold text-[#2c4964] uppercase tracking-wider text-center mb-4 font-heading">
           AI-Powered Extraction Pipeline
         </div>
-        <div className="flex justify-center items-center gap-0">
+        <div className="flex justify-center items-center gap-0 bg-white rounded-lg p-4 shadow-medilab">
           {[
             { icon: '📄', tier: 'Upload', label: 'PDF/Image' },
             { icon: '🔍', tier: 'OCR', label: 'Textract' },
@@ -92,14 +98,16 @@ export default function UploadPanel({ onFileUpload, error }: UploadPanelProps) {
           ].map((step, i, arr) => (
             <div key={step.tier} className="flex items-center">
               <div className="text-center px-5">
-                <div className="text-3xl">{step.icon}</div>
-                <div className={`text-xs font-semibold mt-1 ${step.isGreen ? 'text-green-600' : 'text-nhs-blue'}`}>
+                <div className="w-12 h-12 mx-auto mb-2 bg-gray-50 rounded-full flex items-center justify-center">
+                  <span className="text-2xl">{step.icon}</span>
+                </div>
+                <div className={`text-xs font-semibold ${step.isGreen ? 'text-[#059652]' : 'text-[#1977cc]'}`}>
                   {step.tier}
                 </div>
-                <div className="text-xs text-gray-500">{step.label}</div>
+                <div className="text-xs text-[#444444]">{step.label}</div>
               </div>
               {i < arr.length - 1 && (
-                <div className="text-gray-300 text-2xl pt-5">→</div>
+                <div className="text-[#1977cc] text-xl">→</div>
               )}
             </div>
           ))}

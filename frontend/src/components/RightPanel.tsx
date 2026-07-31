@@ -36,9 +36,9 @@ export default function RightPanel({ result }: RightPanelProps) {
   const confPercent = Math.round((result.unified_confidence || 0) * 100);
 
   const statusBadge = result.unified_confidence >= threshold ? (
-    <span className="badge badge-processed">✅ High Confidence ({confPercent}%)</span>
+    <span className="badge badge-processed">High Confidence ({confPercent}%)</span>
   ) : (
-    <span className="badge badge-review">⚠️ Review Required ({confPercent}%)</span>
+    <span className="badge badge-review">Review Required ({confPercent}%)</span>
   );
 
   const formatDate = (iso: string) => {
@@ -50,126 +50,158 @@ export default function RightPanel({ result }: RightPanelProps) {
   };
 
   return (
-    <div className="w-[280px] bg-white overflow-y-auto">
-      {/* Patient Info */}
-      <section className="border-b border-gray-200 p-4">
-        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Patient Info</h4>
-        <div className="info-row">
-          <span className="info-label">Patient Name</span>
-          <span className="info-value">{pt.name || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">NHS Number</span>
-          <span className="info-value">{pt.nhs_number || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Date of Birth</span>
-          <span className="info-value">{pt.dob || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Sex</span>
-          <span className="info-value">{pt.sex || '—'}</span>
-        </div>
-        {pt.gravida_parity && (
+    <div className="w-[300px] bg-white overflow-y-auto shadow-medilab">
+      {/* Patient Info - MediLab Style */}
+      <section className="border-b border-gray-100 p-5">
+        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
+          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">👤</span>
+          Patient Info
+        </h4>
+        <div className="space-y-3">
           <div className="info-row">
-            <span className="info-label">G/P</span>
-            <span className="info-value">{pt.gravida_parity}</span>
+            <span className="info-label">Patient Name</span>
+            <span className="info-value">{pt.name || '—'}</span>
           </div>
-        )}
-        {pt.edd && (
           <div className="info-row">
-            <span className="info-label">EDD</span>
-            <span className="info-value">{pt.edd}</span>
+            <span className="info-label">NHS Number</span>
+            <span className="info-value font-mono">{pt.nhs_number || '—'}</span>
           </div>
-        )}
-        {pt.gestational_age && (
           <div className="info-row">
-            <span className="info-label">Gest. Age</span>
-            <span className="info-value">{pt.gestational_age}</span>
+            <span className="info-label">Date of Birth</span>
+            <span className="info-value">{pt.dob || '—'}</span>
           </div>
-        )}
+          <div className="info-row">
+            <span className="info-label">Sex</span>
+            <span className="info-value">{pt.sex || '—'}</span>
+          </div>
+          {pt.gravida_parity && (
+            <div className="info-row">
+              <span className="info-label">G/P</span>
+              <span className="info-value">{pt.gravida_parity}</span>
+            </div>
+          )}
+          {pt.edd && (
+            <div className="info-row">
+              <span className="info-label">EDD</span>
+              <span className="info-value">{pt.edd}</span>
+            </div>
+          )}
+          {pt.gestational_age && (
+            <div className="info-row">
+              <span className="info-label">Gest. Age</span>
+              <span className="info-value">{pt.gestational_age}</span>
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* Document Info */}
-      <section className="border-b border-gray-200 p-4">
-        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Document Info</h4>
-        <div className="info-row">
-          <span className="info-label">Name</span>
-          <span className="info-value break-all">{result.filename || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Letter Type</span>
-          <span className="info-value">{result.letter_type || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Hospital Name</span>
-          <span className="info-value text-xs">{result.hospital_trust || '—'}</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Status</span>
-          <div>{statusBadge}</div>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Confidence</span>
-          <span className="info-value">
-            {confPercent}% (threshold {Math.round(threshold * 100)}%)
-          </span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Created Date</span>
-          <span className="info-value">{formatDate(result.processed_at)}</span>
-        </div>
-        {result.is_sensitive && (
+      {/* Document Info - MediLab Style */}
+      <section className="border-b border-gray-100 p-5">
+        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
+          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">📄</span>
+          Document Info
+        </h4>
+        <div className="space-y-3">
           <div className="info-row">
-            <span className="info-label">⚠️ Sensitivity</span>
-            <span className="info-value text-yellow-700 text-xs font-semibold">
-              Safeguarding/Sensitive — patient summary filtered
-            </span>
+            <span className="info-label">Name</span>
+            <span className="info-value break-all">{result.filename || '—'}</span>
           </div>
-        )}
-      </section>
-
-      {/* Clinical Specifics */}
-      {Object.keys(specs).length > 0 && (
-        <section className="border-b border-gray-200 p-4">
-          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Clinical Specifics</h4>
-          {Object.entries(specs).map(([key, value]) => {
-            const label = CLINICAL_SPECIFICS_LABELS[key] || key.replace(/_/g, ' ');
-            const displayValue = typeof value === 'object'
-              ? Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(' | ')
-              : String(value);
-            return (
-              <div key={key} className="info-row">
-                <span className="info-label">{label}</span>
-                <span className="info-value break-words">{displayValue}</span>
+          <div className="info-row">
+            <span className="info-label">Letter Type</span>
+            <span className="info-value">{result.letter_type || '—'}</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Hospital Name</span>
+            <span className="info-value text-xs">{result.hospital_trust || '—'}</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Status</span>
+            <div className="mt-1">{statusBadge}</div>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Confidence</span>
+            <div className="mt-1">
+              <div className="conf-bar-wrap w-full">
+                <div
+                  className={`conf-bar ${confPercent >= 75 ? 'conf-high' : confPercent >= 50 ? 'conf-mid' : 'conf-low'}`}
+                  style={{ width: `${confPercent}%` }}
+                />
               </div>
-            );
-          })}
+              <span className="text-xs text-[#444444] mt-1 block">
+                {confPercent}% (threshold {Math.round(threshold * 100)}%)
+              </span>
+            </div>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Created Date</span>
+            <span className="info-value">{formatDate(result.processed_at)}</span>
+          </div>
+          {result.is_sensitive && (
+            <div className="info-row">
+              <span className="info-label">Sensitivity</span>
+              <span className="text-xs font-semibold text-[#b38600] bg-[#ffc107]/10 px-2 py-1 rounded">
+                Safeguarding/Sensitive — patient summary filtered
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Clinical Specifics - MediLab Style */}
+      {Object.keys(specs).length > 0 && (
+        <section className="border-b border-gray-100 p-5">
+          <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
+            <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">🏥</span>
+            Clinical Specifics
+          </h4>
+          <div className="space-y-3">
+            {Object.entries(specs).map(([key, value]) => {
+              const label = CLINICAL_SPECIFICS_LABELS[key] || key.replace(/_/g, ' ');
+              const displayValue = typeof value === 'object'
+                ? Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(' | ')
+                : String(value);
+              return (
+                <div key={key} className="info-row">
+                  <span className="info-label">{label}</span>
+                  <span className="info-value break-words">{displayValue}</span>
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
 
-      {/* Pipeline Stages */}
-      <section className="p-4">
-        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Pipeline Stages</h4>
-        {Object.entries(stages).map(([key, stage]) => {
-          if (!stage) return null;
-          const color = stage.status === 'done' ? 'text-green-600' :
-                        stage.status === 'partial' ? 'text-yellow-600' :
-                        stage.status === 'error' ? 'text-red-600' :
-                        'text-gray-500';
-          const confText = stage.confidence != null ? ` (${Math.round(stage.confidence * 100)}%)` : '';
-          return (
-            <div key={key} className="py-1 border-b border-gray-100 last:border-0">
-              <div className="flex justify-between text-xs">
-                <span className="font-semibold">{key}</span>
-                <span className={color}>{stage.status}{confText}</span>
+      {/* Pipeline Stages - MediLab Style */}
+      <section className="p-5">
+        <h4 className="text-xs font-bold text-[#2c4964] uppercase tracking-wider mb-4 font-heading flex items-center gap-2">
+          <span className="w-6 h-6 bg-[#1977cc]/10 rounded-full flex items-center justify-center text-sm">⚙️</span>
+          Pipeline Stages
+        </h4>
+        <div className="space-y-2">
+          {Object.entries(stages).map(([key, stage]) => {
+            if (!stage) return null;
+            const bgColor = stage.status === 'done' ? 'bg-[#059652]/5 border-[#059652]/20' :
+                          stage.status === 'partial' ? 'bg-[#ffc107]/5 border-[#ffc107]/30' :
+                          stage.status === 'error' ? 'bg-[#df1529]/5 border-[#df1529]/20' :
+                          'bg-gray-50 border-gray-200';
+            const textColor = stage.status === 'done' ? 'text-[#059652]' :
+                          stage.status === 'partial' ? 'text-[#b38600]' :
+                          stage.status === 'error' ? 'text-[#df1529]' :
+                          'text-[#768692]';
+            const confText = stage.confidence != null ? ` (${Math.round(stage.confidence * 100)}%)` : '';
+            return (
+              <div key={key} className={`p-2.5 rounded-lg border ${bgColor}`}>
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-[#2c4964]">{key}</span>
+                  <span className={`font-medium ${textColor}`}>{stage.status}{confText}</span>
+                </div>
+                {stage.error && (
+                  <div className="text-xs text-[#df1529] mt-1.5 break-words">{stage.error}</div>
+                )}
               </div>
-              {stage.error && (
-                <div className="text-xs text-red-600 mt-0.5 break-words">{stage.error}</div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </section>
     </div>
   );
