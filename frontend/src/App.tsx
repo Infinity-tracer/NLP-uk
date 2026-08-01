@@ -75,10 +75,10 @@ export default function App() {
   ];
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-50">
+    <div className="h-screen flex overflow-hidden bg-[#f0f4f8] p-3 gap-3">
       {/* Sidebar - Collapsible */}
       <aside
-        className={`bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 shadow-lg transition-all duration-300 ${
+        className={`bg-[#2c4964] flex flex-col items-center py-3 flex-shrink-0 rounded-2xl shadow-[0px_2px_15px_rgba(0,0,0,0.1)] transition-all duration-300 ${
           sidebarExpanded ? 'w-48' : 'w-16'
         }`}
         onMouseEnter={() => setSidebarExpanded(true)}
@@ -138,9 +138,9 @@ export default function App() {
       </aside>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-[0px_2px_15px_rgba(0,0,0,0.08)] overflow-hidden">
         {/* Top bar */}
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center px-6 flex-shrink-0 shadow-[0px_2px_10px_rgba(0,0,0,0.05)]">
+        <header className="h-14 bg-white border-b border-gray-100 flex items-center px-6 flex-shrink-0">
           <h1 className="text-base font-semibold text-[#2c4964] flex-1">
             {appState === 'result' ? 'View Document' : appState === 'processing' ? `Processing: ${currentFile?.name || 'Document'}` : 'Document Extraction Portal'}
           </h1>
@@ -163,11 +163,11 @@ export default function App() {
           )}
 
           {appState === 'result' && result && (
-            <div className="flex flex-1 overflow-hidden p-4 gap-4 bg-[#f0f4f8]">
+            <div className="flex flex-1 overflow-hidden">
               {/* Left Panel - Document Viewer (Collapsible) */}
               <div
-                className={`relative bg-white rounded-xl shadow-[0px_2px_15px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
-                  leftPanelExpanded ? 'flex-1 min-w-[300px]' : 'w-12 flex-shrink-0'
+                className={`relative bg-white border-r border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+                  leftPanelExpanded ? 'flex-1 min-w-[300px]' : 'w-11 flex-shrink-0'
                 }`}
                 onMouseEnter={() => !leftPanelExpanded && setLeftPanelExpanded(true)}
               >
@@ -176,26 +176,26 @@ export default function App() {
                     <DocumentViewer result={result} file={currentFile} />
                     <button
                       onClick={() => setLeftPanelExpanded(false)}
-                      className="absolute top-3 right-3 w-7 h-7 bg-gray-100 hover:bg-[#1977cc] hover:text-white rounded-full flex items-center justify-center text-gray-500 transition-all z-10"
+                      className="absolute top-2 right-2 w-6 h-6 bg-white/90 hover:bg-[#1977cc] hover:text-white border border-gray-200 rounded-md flex items-center justify-center text-gray-400 transition-all z-10"
                       title="Collapse panel"
                     >
-                      <IconChevronLeft size={14} />
+                      <IconChevronLeft size={12} />
                     </button>
                   </>
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all rounded-xl">
-                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
-                      DOCUMENT
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer bg-gray-50/50 hover:bg-gray-100/50 transition-all">
+                    <div className="writing-vertical text-[10px] font-bold text-[#2c4964] tracking-widest uppercase rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      Document
                     </div>
-                    <IconChevronRight size={14} className="text-gray-400 mt-2" />
+                    <IconChevronRight size={12} className="text-gray-400 mt-3" />
                   </div>
                 )}
               </div>
 
               {/* Center Panel - Details (Collapsible) */}
               <div
-                className={`relative bg-white rounded-xl shadow-[0px_2px_15px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
-                  centerPanelExpanded ? 'flex-1 min-w-[380px] max-w-[500px]' : 'w-12 flex-shrink-0'
+                className={`relative bg-white border-r border-gray-100 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+                  centerPanelExpanded ? 'flex-1 min-w-[380px] max-w-[480px]' : 'w-11 flex-shrink-0'
                 }`}
                 onMouseEnter={() => !centerPanelExpanded && setCenterPanelExpanded(true)}
               >
@@ -210,26 +210,26 @@ export default function App() {
                     />
                     <button
                       onClick={() => setCenterPanelExpanded(false)}
-                      className="absolute top-3 right-3 w-7 h-7 bg-gray-100 hover:bg-[#1977cc] hover:text-white rounded-full flex items-center justify-center text-gray-500 transition-all z-10"
+                      className="absolute top-2 right-2 w-6 h-6 bg-white/90 hover:bg-[#1977cc] hover:text-white border border-gray-200 rounded-md flex items-center justify-center text-gray-400 transition-all z-10"
                       title="Collapse panel"
                     >
-                      <IconChevronLeft size={14} />
+                      <IconChevronLeft size={12} />
                     </button>
                   </>
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all rounded-xl">
-                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
-                      DETAILS
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer bg-gray-50/50 hover:bg-gray-100/50 transition-all">
+                    <div className="writing-vertical text-[10px] font-bold text-[#2c4964] tracking-widest uppercase rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      Details
                     </div>
-                    <IconChevronRight size={14} className="text-gray-400 mt-2" />
+                    <IconChevronRight size={12} className="text-gray-400 mt-3" />
                   </div>
                 )}
               </div>
 
               {/* Right Panel - Patient/Doc Info (Collapsible) */}
               <div
-                className={`relative bg-white rounded-xl shadow-[0px_2px_15px_rgba(0,0,0,0.08)] flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
-                  rightPanelExpanded ? 'w-[320px] flex-shrink-0' : 'w-12 flex-shrink-0'
+                className={`relative bg-white flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${
+                  rightPanelExpanded ? 'w-[320px] flex-shrink-0' : 'w-11 flex-shrink-0'
                 }`}
                 onMouseEnter={() => !rightPanelExpanded && setRightPanelExpanded(true)}
               >
@@ -238,18 +238,18 @@ export default function App() {
                     <RightPanel result={result} />
                     <button
                       onClick={() => setRightPanelExpanded(false)}
-                      className="absolute top-3 right-3 w-7 h-7 bg-gray-100 hover:bg-[#1977cc] hover:text-white rounded-full flex items-center justify-center text-gray-500 transition-all z-10"
+                      className="absolute top-2 right-2 w-6 h-6 bg-white/90 hover:bg-[#1977cc] hover:text-white border border-gray-200 rounded-md flex items-center justify-center text-gray-400 transition-all z-10"
                       title="Collapse panel"
                     >
-                      <IconChevronRight size={14} />
+                      <IconChevronRight size={12} />
                     </button>
                   </>
                 ) : (
-                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer hover:bg-gray-50 transition-all rounded-xl">
-                    <div className="writing-vertical text-xs font-semibold text-[#2c4964] tracking-wider rotate-180" style={{ writingMode: 'vertical-rl' }}>
-                      INFO
+                  <div className="h-full flex flex-col items-center justify-center py-4 cursor-pointer bg-gray-50/50 hover:bg-gray-100/50 transition-all">
+                    <div className="writing-vertical text-[10px] font-bold text-[#2c4964] tracking-widest uppercase rotate-180" style={{ writingMode: 'vertical-rl' }}>
+                      Info
                     </div>
-                    <IconChevronLeft size={14} className="text-gray-400 mt-2" />
+                    <IconChevronLeft size={12} className="text-gray-400 mt-3" />
                   </div>
                 )}
               </div>
